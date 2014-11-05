@@ -1,0 +1,288 @@
+from cffi import FFI
+ffi = FFI()
+
+ffi.cdef("""
+// gphoto2-context.h
+typedef long time_t; // Dangerous, might not be portable
+
+typedef struct _GPContext GPContext;
+GPContext *gp_context_new (void);
+void gp_context_ref   (GPContext *context);
+void gp_context_unref (GPContext *context);
+
+//gphoto2-camera.h
+typedef struct {
+    char text [32768];
+} CameraText;
+typedef struct {
+    char name [128];
+    char folder [1024];
+} CameraFilePath;
+typedef enum {
+    GP_CAPTURE_IMAGE,
+    GP_CAPTURE_MOVIE,
+    GP_CAPTURE_SOUND
+} CameraCaptureType;
+typedef enum {
+    GP_EVENT_UNKNOWN,
+    GP_EVENT_TIMEOUT,
+    GP_EVENT_FILE_ADDED,
+    GP_EVENT_FOLDER_ADDED,
+    GP_EVENT_CAPTURE_COMPLETE
+} CameraEventType;
+typedef struct {
+        char model [128];
+        int usb_vendor;
+        int usb_product;
+        int usb_class;
+        int usb_subclass;
+        int usb_protocol;
+        char library [1024];
+        char id [1024];
+        ...;
+} CameraAbilities;
+
+typedef enum {
+    GP_FILE_STATUS_NOT_DOWNLOADED,  /**< File is not downloaded. */
+    GP_FILE_STATUS_DOWNLOADED   /**< File is already downloaded. */
+} CameraFileStatus;
+
+typedef enum {
+    GP_FILE_INFO_NONE            = 0,   /**< \brief No fields set. */
+    GP_FILE_INFO_TYPE            = 1,   /**< \brief The MIME type is set. */
+    GP_FILE_INFO_SIZE            = 4,   /**< \brief The filesize is set. */
+    GP_FILE_INFO_WIDTH           = 8,   /**< \brief The width is set. */
+    GP_FILE_INFO_HEIGHT          = 16,  /**< \brief The height is set. */
+    GP_FILE_INFO_PERMISSIONS     = 32,  /**< \brief The access permissions are set. */
+    GP_FILE_INFO_STATUS      = 64,  /**< \brief The status is set (downloaded). */
+    GP_FILE_INFO_MTIME       = 128, /**< \brief The modification time is set. */
+    GP_FILE_INFO_ALL             = 0xFF /**< \brief All possible fields set. Internal. */
+} CameraFileInfoFields;
+
+/**
+ * \brief Bitmask containing the file permission flags.
+ *
+ * Possible flag values of the permission entry in the file information.
+ */
+typedef enum {
+    GP_FILE_PERM_NONE       = 0,        /**< \brief No permissions. */
+    GP_FILE_PERM_READ       = 1,    /**< \brief Read permissions. */
+    GP_FILE_PERM_DELETE     = 2,    /**< \brief Write permissions */
+    GP_FILE_PERM_ALL        = 0xFF      /**< \brief Internal. */
+} CameraFilePermissions;
+
+typedef enum {
+    GP_FILE_ACCESSTYPE_MEMORY,  /**< File is in system memory. */
+    GP_FILE_ACCESSTYPE_FD,      /**< File is associated with a UNIX filedescriptor. */
+    GP_FILE_ACCESSTYPE_HANDLER  /**< File is associated with a programmatic handler. */
+} CameraFileAccessType;
+
+typedef enum {
+    GP_FILE_TYPE_PREVIEW,   /**< A preview of an image. */
+    GP_FILE_TYPE_NORMAL,    /**< The regular normal data of a file. */
+    GP_FILE_TYPE_RAW,   /**< The raw mode of a file, for instance the raw bayer data for cameras
+                 * where postprocessing is done in the driver. The RAW files of modern
+                 * DSLRs are GP_FILE_TYPE_NORMAL usually. */
+    GP_FILE_TYPE_AUDIO, /**< The audio view of a file. Perhaps an embedded comment or similar. */
+    GP_FILE_TYPE_EXIF,  /**< The embedded EXIF data of an image. */
+    GP_FILE_TYPE_METADATA   /**< The metadata of a file, like Metadata of files on MTP devices. */
+} CameraFileType;
+
+typedef struct _CameraFileInfoPreview {
+    CameraFileInfoFields fields;    /**< \brief Bitmask containing the set members. */
+    CameraFileStatus status;    /**< \brief Status of the preview. */
+    uint64_t size;          /**< \brief Size of the preview. */
+    char type[64];          /**< \brief MIME type of the preview. */
+
+    uint32_t width;         /**< \brief Width of the preview. */
+    uint32_t height;        /**< \brief Height of the preview. */
+} CameraFileInfoPreview;
+
+typedef struct _CameraFileInfoFile {
+    CameraFileInfoFields fields;    /**< \brief Bitmask containing the set members. */
+    CameraFileStatus status;    /**< \brief Status of the file. */
+    uint64_t size;          /**< \brief Size of the file. */
+    char type[64];          /**< \brief MIME type of the file. */
+    uint32_t width;         /**< \brief Height of the file. */
+    uint32_t height;        /**< \brief Width of the file. */
+    CameraFilePermissions permissions;/**< \brief Permissions of the file. */
+    time_t mtime;           /**< \brief Modification time of the file. */
+} CameraFileInfoFile;
+
+typedef struct _CameraFileInfo {
+    CameraFileInfoPreview preview;
+    CameraFileInfoFile    file;
+    ...;
+} CameraFileInfo;
+
+
+
+
+
+
+typedef ... CameraFile;
+int gp_file_new            (CameraFile **file);
+int gp_file_new_from_fd    (CameraFile **file, int fd);
+int gp_file_ref            (CameraFile *file);
+int gp_file_unref          (CameraFile *file);
+int gp_file_free           (CameraFile *file);
+
+int gp_file_set_name       (CameraFile *file, const char  *name);
+int gp_file_get_name       (CameraFile *file, const char **name);
+
+int gp_file_set_mime_type  (CameraFile *file, const char  *mime_type);
+int gp_file_get_mime_type  (CameraFile *file, const char **mime_type);
+
+int gp_file_get_mtime   (CameraFile *file, time_t *mtime);
+
+int gp_file_detect_mime_type          (CameraFile *file);
+int gp_file_adjust_name_for_mime_type (CameraFile *file);
+int gp_file_get_name_by_type (CameraFile *file, const char *basename, CameraFileType type, char **newname);
+
+int gp_file_set_data_and_size (CameraFile*,       char *data,
+                   unsigned long int size);
+int gp_file_get_data_and_size (CameraFile*, const char **data,
+                   unsigned long int *size);
+
+typedef ... CameraWidget;
+
+typedef enum {                                  /* Value (get/set): */
+    GP_WIDGET_WINDOW,   /**< \brief Window widget
+                 *   This is the toplevel configuration widget. It should likely contain multiple #GP_WIDGET_SECTION entries.
+                 */
+    GP_WIDGET_SECTION,  /**< \brief Section widget (think Tab) */
+    GP_WIDGET_TEXT,     /**< \brief Text widget. */         /* char *       */
+    GP_WIDGET_RANGE,    /**< \brief Slider widget. */           /* float        */
+    GP_WIDGET_TOGGLE,   /**< \brief Toggle widget (think check box) */  /* int          */
+    GP_WIDGET_RADIO,    /**< \brief Radio button widget. */     /* char *       */
+    GP_WIDGET_MENU,     /**< \brief Menu widget (same as RADIO). */ /* char *       */
+    GP_WIDGET_BUTTON,   /**< \brief Button press widget. */     /* CameraWidgetCallback */
+    GP_WIDGET_DATE      /**< \brief Date entering widget. */        /* int          */
+} CameraWidgetType;
+
+int     gp_widget_new   (CameraWidgetType type, const char *label, 
+                 CameraWidget **widget);
+int     gp_widget_free  (CameraWidget *widget);
+int     gp_widget_ref   (CameraWidget *widget);
+int     gp_widget_unref (CameraWidget *widget);
+
+int gp_widget_append    (CameraWidget *widget, CameraWidget *child);
+int     gp_widget_prepend   (CameraWidget *widget, CameraWidget *child);
+
+int     gp_widget_count_children     (CameraWidget *widget);
+int gp_widget_get_child      (CameraWidget *widget, int child_number, 
+                      CameraWidget **child);
+
+/* Retrieve Widgets */
+int gp_widget_get_child_by_label (CameraWidget *widget,
+                      const char *label,
+                      CameraWidget **child);
+int gp_widget_get_child_by_id    (CameraWidget *widget, int id, 
+                      CameraWidget **child);
+int gp_widget_get_child_by_name  (CameraWidget *widget,
+                                      const char *name,
+                      CameraWidget **child);
+int gp_widget_get_root           (CameraWidget *widget,
+                                      CameraWidget **root);
+int     gp_widget_get_parent         (CameraWidget *widget,
+                      CameraWidget **parent);
+
+int gp_widget_set_value     (CameraWidget *widget, const void *value);
+int gp_widget_get_value     (CameraWidget *widget, void *value);
+
+int     gp_widget_set_name      (CameraWidget *widget, const char  *name);
+int     gp_widget_get_name      (CameraWidget *widget, const char **name);
+
+int gp_widget_set_info      (CameraWidget *widget, const char  *info);
+int gp_widget_get_info      (CameraWidget *widget, const char **info);
+
+int gp_widget_get_id    (CameraWidget *widget, int *id);
+int gp_widget_get_type  (CameraWidget *widget, CameraWidgetType *type);
+int gp_widget_get_label (CameraWidget *widget, const char **label);
+
+int gp_widget_set_range (CameraWidget *range, 
+                 float  low, float  high, float  increment);
+int gp_widget_get_range (CameraWidget *range, 
+                 float *min, float *max, float *increment);
+
+int gp_widget_add_choice     (CameraWidget *widget, const char *choice);
+int gp_widget_count_choices  (CameraWidget *widget);
+int gp_widget_get_choice     (CameraWidget *widget, int choice_number, 
+                                  const char **choice);
+
+int gp_widget_changed        (CameraWidget *widget);
+int     gp_widget_set_changed    (CameraWidget *widget, int changed);
+
+int     gp_widget_set_readonly   (CameraWidget *widget, int readonly);
+int     gp_widget_get_readonly   (CameraWidget *widget, int *readonly);
+
+typedef ... Camera;
+typedef ... CameraList;
+typedef ... CameraStorageInformation;
+
+int gp_list_new             (CameraList **list);
+int gp_camera_new           (Camera **camera);
+int gp_camera_get_abilities (Camera *camera, CameraAbilities *abilities);
+int gp_camera_autodetect    (CameraList *list, GPContext *context);
+int gp_camera_init          (Camera *camera, GPContext *context);
+int gp_camera_exit          (Camera *camera, GPContext *context);
+int gp_camera_ref           (Camera *camera);
+int gp_camera_unref         (Camera *camera);
+int gp_camera_free          (Camera *camera);
+int gp_camera_get_config    (Camera *camera, CameraWidget **window,
+                             GPContext *context);
+int gp_camera_set_config    (Camera *camera, CameraWidget  *window,
+                             GPContext *context);
+int gp_camera_get_summary   (Camera *camera, CameraText *summary,
+                             GPContext *context);
+int gp_camera_get_manual    (Camera *camera, CameraText *manual,
+                             GPContext *context);
+int gp_camera_get_about     (Camera *camera, CameraText *about,
+                             GPContext *context);
+int gp_camera_capture       (Camera *camera, CameraCaptureType type,
+                             CameraFilePath *path, GPContext *context);
+int gp_camera_trigger_capture (Camera *camera, GPContext *context);
+int gp_camera_capture_preview (Camera *camera, CameraFile *file,
+                               GPContext *context);
+int gp_camera_wait_for_event  (Camera *camera, int timeout,
+                               CameraEventType *eventtype, void **eventdata,
+                               GPContext *context);
+int gp_camera_get_storageinfo (Camera *camera, CameraStorageInformation**,
+                               int *, GPContext *context);
+
+int gp_camera_folder_list_files   (Camera *camera, const char *folder,
+                                   CameraList *list, GPContext *context);
+int gp_camera_folder_list_folders (Camera *camera, const char *folder,
+                                   CameraList *list, GPContext *context);
+int gp_camera_folder_delete_all   (Camera *camera, const char *folder,
+                                   GPContext *context);
+int gp_camera_folder_put_file     (Camera *camera, const char *folder,
+                                   const char *filename, CameraFileType type,
+                                   CameraFile *file, GPContext *context);
+int gp_camera_folder_make_dir     (Camera *camera, const char *folder,
+                                   const char *name, GPContext *context);
+int gp_camera_folder_remove_dir   (Camera *camera, const char *folder,
+                                   const char *name, GPContext *context);
+
+int gp_camera_file_get_info   (Camera *camera, const char *folder,
+                               const char *file, CameraFileInfo *info,
+                               GPContext *context);
+int gp_camera_file_set_info   (Camera *camera, const char *folder,
+                               const char *file, CameraFileInfo info,
+                               GPContext *context);
+int gp_camera_file_get        (Camera *camera, const char *folder,
+                               const char *file, CameraFileType type,
+                               CameraFile *camera_file, GPContext *context);
+int gp_camera_file_read       (Camera *camera, const char *folder, const char *file,
+                               CameraFileType type,
+                               uint64_t offset, char *buf, uint64_t *size,
+                               GPContext *context);
+int gp_camera_file_delete     (Camera *camera, const char *folder,
+                               const char *file, GPContext *context);
+""")
+
+lib = ffi.verify("""
+#include "gphoto2/gphoto2-context.h"
+#include "gphoto2/gphoto2-camera.h"
+#include <time.h>
+""", libraries=["gphoto2"])
