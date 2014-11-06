@@ -9,6 +9,7 @@ typedef struct _GPContext GPContext;
 GPContext *gp_context_new (void);
 void gp_context_ref   (GPContext *context);
 void gp_context_unref (GPContext *context);
+const char * gp_result_as_string (int result);
 
 //gphoto2-camera.h
 typedef struct {
