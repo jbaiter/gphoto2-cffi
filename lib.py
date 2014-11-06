@@ -116,11 +116,6 @@ typedef struct _CameraFileInfo {
     ...;
 } CameraFileInfo;
 
-
-
-
-
-
 typedef ... CameraFile;
 int gp_file_new            (CameraFile **file);
 int gp_file_new_from_fd    (CameraFile **file, int fd);
@@ -217,9 +212,24 @@ int     gp_widget_set_changed    (CameraWidget *widget, int changed);
 int     gp_widget_set_readonly   (CameraWidget *widget, int readonly);
 int     gp_widget_get_readonly   (CameraWidget *widget, int *readonly);
 
-typedef ... Camera;
 typedef ... CameraList;
+typedef ... Camera;
 typedef ... CameraStorageInformation;
+typedef ... GPPortInfoList;
+typedef ... CameraAbilitiesList;
+int     gp_port_info_list_load (GPPortInfoList *list);
+int     gp_port_info_list_new(GPPortInfoList** list);
+int     gp_port_info_list_free (GPPortInfoList *list);
+int gp_abilities_list_new   (CameraAbilitiesList** list);
+int gp_abilities_list_load  (CameraAbilitiesList* list, GPContext* context);
+int gp_abilities_list_detect(CameraAbilitiesList* list, GPPortInfoList* info_list,
+                             CameraList* l, GPContext* context);
+int gp_abilities_list_free (CameraAbilitiesList *list);
+
+int gp_list_count (CameraList *list);
+int gp_list_get_name (CameraList *list, int index, const char **name);
+int gp_list_get_value (CameraList *list, int index, const char **value);
+int gp_list_free (CameraList *list);
 
 int gp_list_new             (CameraList **list);
 int gp_camera_new           (Camera **camera);
