@@ -1,5 +1,7 @@
+import os
 import re
 from collections import namedtuple
+from datetime import datetime
 
 import blinker
 
@@ -7,6 +9,8 @@ import util
 from lib import ffi, lib
 
 Range = namedtuple("Range", ('min', 'max', 'step'))
+FileInfo = namedtuple("FileInfo", ('size', 'mime', 'dimensions',
+                                   'permissions', 'last_modified'))
 
 _global_ctx = lib.gp_context_new()
 
@@ -106,6 +110,10 @@ class Camera(object):
         lib.gp_camera_get_config(self._cam, root_widget, self._ctx)
         return self._widget_to_dict(root_widget[0])
 
+    @property
+    def files(self):
+        return self._list_files("/")
+
     def capture(self, wait=False, retrieve=True, keep=False):
         raise NotImplementedError
 
@@ -122,18 +130,46 @@ class Camera(object):
                 out[key] = self._widget_to_dict(child_p[0])
             else:
                 itm = ConfigItem(child_p[0])
-                if not itm.readonly:
-                    out[key] = itm
+                out[key] = itm
         return out
+
+    def _list_files(self, path="/"):
+        files = {}
+        filelist_p = ffi.new("CameraList**")
+        dirlist_p = ffi.new("CameraList**")
+        lib.gp_list_new(filelist_p)
+        lib.gp_list_new(dirlist_p)
+        lib.gp_camera_folder_list_files(self._cam, path, filelist_p[0],
+                                        self._ctx)
+        lib.gp_camera_folder_list_folders(self._cam, path, dirlist_p[0],
+                                          self._ctx)
+        for idx in xrange(lib.gp_list_count(filelist_p[0])):
+            name = ffi.new("const char**")
+            lib.gp_list_get_name(filelist_p[0], idx, name)
+            info = ffi.new("CameraFileInfo*")
+            lib.gp_camera_file_get_info(self._cam, path, name[0], info, self._ctx)
+            permissions = ["--", "r-", "-w", "rw"][info.file.permissions]
+            files[os.path.join(path, ffi.string(name[0]))] = FileInfo(
+                info.file.size, ffi.string(info.file.type),
+                (info.file.width, info.file.height),
+                permissions, datetime.fromtimestamp(info.file.mtime))
+        for idx in xrange(lib.gp_list_count(dirlist_p[0])):
+            name = ffi.new("const char**")
+            lib.gp_list_get_name(dirlist_p[0], idx, name)
+            files.update(self._list_files(
+                os.path.join(path, ffi.string(name[0]))))
+        lib.gp_list_free(filelist_p[0])
+        lib.gp_list_free(dirlist_p[0])
+        return files
 
 
 def list_cameras():
-    camlist_p = ffi.new("CameraList*[1]")
+    camlist_p = ffi.new("CameraList**")
     lib.gp_list_new(camlist_p)
-    port_list_p = ffi.new("GPPortInfoList*[1]")
+    port_list_p = ffi.new("GPPortInfoList**")
     lib.gp_port_info_list_new(port_list_p)
     lib.gp_port_info_list_load(port_list_p[0])
-    abilities_list_p = ffi.new("CameraAbilitiesList*[1]")
+    abilities_list_p = ffi.new("CameraAbilitiesList**")
     lib.gp_abilities_list_new(abilities_list_p)
     lib.gp_abilities_list_load(abilities_list_p[0], _global_ctx)
     lib.gp_abilities_list_detect(abilities_list_p[0], port_list_p[0],

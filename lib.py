@@ -316,6 +316,7 @@ class LibraryWrapper(object):
         self._wrapped = to_wrap
 
     def __getattribute__(self, name):
+        # Use the parent class' implementation to avoid infinite recursion
         val = getattr(object.__getattribute__(self, '_wrapped'), name)
         if not isinstance(val, int):
             ctype = ffi.typeof(val)
