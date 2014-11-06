@@ -292,8 +292,38 @@ int gp_camera_file_delete     (Camera *camera, const char *folder,
                                const char *file, GPContext *context);
 """)
 
-lib = ffi.verify("""
+_lib = ffi.verify("""
 #include "gphoto2/gphoto2-context.h"
 #include "gphoto2/gphoto2-camera.h"
 #include <time.h>
 """, libraries=["gphoto2"])
+
+
+class GPhoto2Error(Exception):
+    def __init__(self, errcode):
+        self.error_code = errcode
+        msg = ffi.string(lib.gp_result_as_string(errcode))
+        super(GPhoto2Error, self).__init__(msg)
+
+
+def check_error(rval):
+    if rval != 0:
+        raise GPhoto2Error(rval)
+
+
+class LibraryWrapper(object):
+    def __init__(self, to_wrap):
+        self._wrapped = to_wrap
+
+    def __getattribute__(self, name):
+        val = getattr(object.__getattribute__(self, '_wrapped'), name)
+        if not isinstance(val, int):
+            ctype = ffi.typeof(val)
+            should_check = (ctype.kind == "function" and
+                            ctype.result == ffi.typeof('int') and
+                            "count" not in name)
+            if should_check:
+                return lambda *a, **kw: check_error(val(*a, **kw))
+        return val
+
+lib = LibraryWrapper(_lib)

@@ -78,8 +78,7 @@ class ConfigItem(object):
         rmin = ffi.new("float*")
         rmax = ffi.new("float*")
         rinc = ffi.new("float*")
-        util.check_error(
-            lib.gp_widget_get_range(self._widget, rmin, rmax, rinc))
+        lib.gp_widget_get_range(self._widget, rmin, rmax, rinc)
         return Range(rmin, rmax, rinc)
 
     def __repr__(self):
@@ -94,18 +93,17 @@ class Camera(object):
         # TODO: Can we us a single global context?
         self._ctx = lib.gp_context_new()
         cp = ffi.new("Camera**")
-        util.check_error(lib.gp_camera_new(cp))
+        lib.gp_camera_new(cp)
         self._cam = cp[0]
         if (bus, address == None, None):
-            util.check_error(lib.gp_camera_init(self._cam, self._ctx))
+            lib.gp_camera_init(self._cam, self._ctx)
         else:
             raise NotImplementedError
 
     @property
     def config(self):
         root_widget = ffi.new("CameraWidget**")
-        util.check_error(
-            lib.gp_camera_get_config(self._cam, root_widget, self._ctx))
+        lib.gp_camera_get_config(self._cam, root_widget, self._ctx)
         return self._widget_to_dict(root_widget[0])
 
     def capture(self, wait=False, retrieve=True, keep=False):
@@ -118,7 +116,7 @@ class Camera(object):
         out = {}
         for idx in xrange(lib.gp_widget_count_children(cwidget)):
             child_p = ffi.new("CameraWidget**")
-            util.check_error(lib.gp_widget_get_child(cwidget, idx, child_p))
+            lib.gp_widget_get_child(cwidget, idx, child_p)
             key = util.get_string(lib.gp_widget_get_name, child_p[0])
             if util.get_widget_type(child_p[0]) in ('window', 'section'):
                 out[key] = self._widget_to_dict(child_p[0])
@@ -131,16 +129,15 @@ class Camera(object):
 
 def list_cameras():
     camlist_p = ffi.new("CameraList*[1]")
-    util.check_error(lib.gp_list_new(camlist_p))
+    lib.gp_list_new(camlist_p)
     port_list_p = ffi.new("GPPortInfoList*[1]")
-    util.check_error(lib.gp_port_info_list_new(port_list_p))
-    util.check_error(lib.gp_port_info_list_load(port_list_p[0]))
+    lib.gp_port_info_list_new(port_list_p)
+    lib.gp_port_info_list_load(port_list_p[0])
     abilities_list_p = ffi.new("CameraAbilitiesList*[1]")
-    util.check_error(lib.gp_abilities_list_new(abilities_list_p))
-    util.check_error(lib.gp_abilities_list_load(abilities_list_p[0], _global_ctx))
-    util.check_error(
-        lib.gp_abilities_list_detect(abilities_list_p[0], port_list_p[0],
-                                     camlist_p[0], _global_ctx))
+    lib.gp_abilities_list_new(abilities_list_p)
+    lib.gp_abilities_list_load(abilities_list_p[0], _global_ctx)
+    lib.gp_abilities_list_detect(abilities_list_p[0], port_list_p[0],
+                                 camlist_p[0], _global_ctx)
     out = {}
     for idx in xrange(lib.gp_list_count(camlist_p[0])):
         name = util.get_string(lib.gp_list_get_name, camlist_p[0], idx)
