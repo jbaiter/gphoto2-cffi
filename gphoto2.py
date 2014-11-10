@@ -194,3 +194,16 @@ def list_cameras():
     lib.gp_port_info_list_free(port_list_p[0])
     lib.gp_abilities_list_free(abilities_list_p[0])
     return out
+
+def autodetect():
+    camlist_p = ffi.new("CameraList**")
+    lib.gp_list_new(camlist_p)
+    lib.gp_camera_autodetect(camlist_p[0], _global_ctx)
+    out = {}
+    for idx in xrange(lib.gp_list_count(camlist_p[0])):
+        name = util.get_string(lib.gp_list_get_name, camlist_p[0], idx)
+        value = util.get_string(lib.gp_list_get_value, camlist_p[0], idx)
+        out[name] = tuple(int(x) for x in
+                          re.match(r"usb:(\d+),(\d+)", value).groups())
+    lib.gp_list_free(camlist_p[0])
+    return out
