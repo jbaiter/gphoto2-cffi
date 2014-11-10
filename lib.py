@@ -217,9 +217,14 @@ typedef ... Camera;
 typedef ... CameraStorageInformation;
 typedef ... GPPortInfoList;
 typedef ... CameraAbilitiesList;
+struct _GPPortInfo;
+typedef struct _GPPortInfo *GPPortInfo;
 int     gp_port_info_list_load (GPPortInfoList *list);
 int     gp_port_info_list_new(GPPortInfoList** list);
 int     gp_port_info_list_free (GPPortInfoList *list);
+int     gp_port_info_list_lookup_path (GPPortInfoList *list, const char *path);
+int     gp_port_info_new(GPPortInfo** info);
+int     gp_port_info_list_get_info (GPPortInfoList *list, int n, GPPortInfo *info);
 int gp_abilities_list_new   (CameraAbilitiesList** list);
 int gp_abilities_list_load  (CameraAbilitiesList* list, GPContext* context);
 int gp_abilities_list_detect(CameraAbilitiesList* list, GPPortInfoList* info_list,
@@ -240,6 +245,7 @@ int gp_camera_exit          (Camera *camera, GPContext *context);
 int gp_camera_ref           (Camera *camera);
 int gp_camera_unref         (Camera *camera);
 int gp_camera_free          (Camera *camera);
+int gp_camera_set_port_info (Camera *camera, GPPortInfo info);
 int gp_camera_get_config    (Camera *camera, CameraWidget **window,
                              GPContext *context);
 int gp_camera_set_config    (Camera *camera, CameraWidget  *window,

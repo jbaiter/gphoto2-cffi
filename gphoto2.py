@@ -93,16 +93,22 @@ class ConfigItem(object):
 
 class Camera(object):
     def __init__(self, bus=None, address=None):
-        self.signals = blinker.Namespace()
-        # TODO: Can we us a single global context?
+        # TODO: Can we use a single global context?
         self._ctx = lib.gp_context_new()
-        cp = ffi.new("Camera**")
-        lib.gp_camera_new(cp)
-        self._cam = cp[0]
-        if (bus, address == None, None):
-            lib.gp_camera_init(self._cam, self._ctx)
-        else:
-            raise NotImplementedError
+        camera_p = ffi.new("Camera**")
+        lib.gp_camera_new(camera_p)
+        self._cam = camera_p[0]
+        if (bus, address) != (None, None):
+            port_name = "usb:{0:03},{1:03}".format(bus, address)
+            port_list_p = _get_portinfo_list()[0]
+            port_info_p = ffi.new("GPPortInfo**")
+            lib.gp_port_info_new(port_info_p)
+            port_num = lib.gp_port_info_list_lookup_path(
+                port_list_p, port_name)
+            lib.gp_port_info_list_get_info(port_list_p, port_num,
+                                           port_info_p[0])
+            lib.gp_camera_set_port_info(self._cam, port_info_p[0][0])
+        lib.gp_camera_init(self._cam, self._ctx)
 
     @property
     def config(self):
@@ -162,13 +168,17 @@ class Camera(object):
         lib.gp_list_free(dirlist_p[0])
         return files
 
+def _get_portinfo_list():
+    port_list_p = ffi.new("GPPortInfoList**")
+    lib.gp_port_info_list_new(port_list_p)
+    lib.gp_port_info_list_load(port_list_p[0])
+    return port_list_p
+
 
 def list_cameras():
     camlist_p = ffi.new("CameraList**")
     lib.gp_list_new(camlist_p)
-    port_list_p = ffi.new("GPPortInfoList**")
-    lib.gp_port_info_list_new(port_list_p)
-    lib.gp_port_info_list_load(port_list_p[0])
+    port_list_p = _get_portinfo_list()
     abilities_list_p = ffi.new("CameraAbilitiesList**")
     lib.gp_abilities_list_new(abilities_list_p)
     lib.gp_abilities_list_load(abilities_list_p[0], _global_ctx)
