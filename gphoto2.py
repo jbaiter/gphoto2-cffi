@@ -46,13 +46,13 @@ class ConfigItem(object):
             if value not in self.choices:
                 raise ValueError("Invalid choice (valid: {0}",
                                  repr(self.choices))
-            val = ffi.new("char*", value)
-            val_p = ffi.new("char*[]", [value])
+            val_p = ffi.new("char**")
+            val_p[0] = ffi.new("char[]", value)
         elif self.type == 'text':
             if not isinstance(value, basestring):
                 raise ValueError("Value must be a string.")
-            val = ffi.new("char*", value)
-            val_p = ffi.new("char*[]", [value])
+            val_p = ffi.new("char**")
+            val_p[0] = ffi.new("char[]", value)
         elif self.type == 'range':
             if value < self.range.min or value > self.range.max:
                 raise ValueError("Value exceeds valid range ({0}-{1}."
