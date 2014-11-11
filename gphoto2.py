@@ -1,10 +1,11 @@
+import logging
 import os
 import re
 import threading
 from collections import namedtuple
 from datetime import datetime
 
-import blinker
+from concurrent.futures import ThreadPoolExecutor
 
 import util
 from lib import ffi, lib, FILE_TYPES
@@ -253,7 +254,15 @@ class Camera(object):
             lib.gp_list_get_name(filelist_p[0], idx, name)
             info = ffi.new("CameraFileInfo*")
             lib.gp_camera_file_get_info(self._cam, path, name[0], info, self._ctx)
-            permissions = ["--", "r-", "-w", "rw"][info.file.permissions]
+            permissions = ""
+            if info.file.permissions & lib.GP_FILE_PERM_READ:
+                permissions += 'r'
+            else:
+                permissions += '-'
+            if info.file.permissions & lib.GP_FILE_PERM_DELETE:
+                permissions += 'w'
+            else:
+                permissions += '-'
             files[os.path.join(path, ffi.string(name[0]))] = FileInfo(
                 info.file.size, ffi.string(info.file.type),
                 (info.file.width, info.file.height),
