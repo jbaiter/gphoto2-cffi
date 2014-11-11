@@ -223,7 +223,7 @@ int     gp_port_info_list_load (GPPortInfoList *list);
 int     gp_port_info_list_new(GPPortInfoList** list);
 int     gp_port_info_list_free (GPPortInfoList *list);
 int     gp_port_info_list_lookup_path (GPPortInfoList *list, const char *path);
-int     gp_port_info_new(GPPortInfo** info);
+int     gp_port_info_new(GPPortInfo* info);
 int     gp_port_info_list_get_info (GPPortInfoList *list, int n, GPPortInfo *info);
 int gp_abilities_list_new   (CameraAbilitiesList** list);
 int gp_abilities_list_load  (CameraAbilitiesList* list, GPContext* context);

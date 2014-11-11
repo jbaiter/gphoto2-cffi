@@ -101,13 +101,13 @@ class Camera(object):
         if (bus, address) != (None, None):
             port_name = "usb:{0:03},{1:03}".format(bus, address)
             port_list_p = _get_portinfo_list()[0]
-            port_info_p = ffi.new("GPPortInfo**")
+            port_info_p = ffi.new("GPPortInfo*")
             lib.gp_port_info_new(port_info_p)
             port_num = lib.gp_port_info_list_lookup_path(
                 port_list_p, port_name)
             lib.gp_port_info_list_get_info(port_list_p, port_num,
-                                           port_info_p[0])
-            lib.gp_camera_set_port_info(self._cam, port_info_p[0][0])
+                                           port_info_p)
+            lib.gp_camera_set_port_info(self._cam, port_info_p[0])
         lib.gp_camera_init(self._cam, self._ctx)
 
     @property
