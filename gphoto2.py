@@ -66,7 +66,7 @@ class ConfigItem(object):
             val_p = ffi.new("int*")
         elif self.type == 'date':
             val_p = ffi.new("int*")
-        check_error(lib.gp_widget_set_value(self._widget, val_p))
+        lib.gp_widget_set_value(self._widget, val_p)
 
     def _read_choices(self):
         if self.type != 'selection':
