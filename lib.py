@@ -318,19 +318,26 @@ def check_error(rval):
 
 
 class LibraryWrapper(object):
+    BLACKLIST = (
+        "gp_context_new",
+        "gp_list_count",
+        "gp_widget_count_choices",
+        "gp_widget_count_children",
+        "gp_result_as_string",
+        # This one's a bit nasty, since its return value can be both an index
+        # *or* an error code...
+        "gp_port_info_list_lookup_path"
+    )
     def __init__(self, to_wrap):
         self._wrapped = to_wrap
 
     def __getattribute__(self, name):
         # Use the parent class' implementation to avoid infinite recursion
         val = getattr(object.__getattribute__(self, '_wrapped'), name)
-        if not isinstance(val, int):
-            ctype = ffi.typeof(val)
-            should_check = (ctype.kind == "function" and
-                            ctype.result == ffi.typeof('int') and
-                            "count" not in name)
-            if should_check:
-                return lambda *a, **kw: check_error(val(*a, **kw))
-        return val
+        blacklist = object.__getattribute__(self, 'BLACKLIST')
+        if not isinstance(val, int) and name not in blacklist:
+            return lambda *a, **kw: check_error(val(*a, **kw))
+        else:
+            return val
 
 lib = LibraryWrapper(_lib)
