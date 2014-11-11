@@ -6,7 +6,7 @@ from datetime import datetime
 import blinker
 
 import util
-from lib import ffi, lib
+from lib import ffi, lib, FILE_TYPES
 
 Range = namedtuple("Range", ('min', 'max', 'step'))
 FileInfo = namedtuple("FileInfo", ('size', 'mime', 'dimensions',
