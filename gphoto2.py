@@ -95,10 +95,12 @@ class ConfigItem(object):
 class Camera(object):
     def __init__(self, bus=None, address=None):
         # TODO: Can we use a single global context?
+        self._logger = logging.getLogger()
         self._ctx = lib.gp_context_new()
         camera_p = ffi.new("Camera**")
         lib.gp_camera_new(camera_p)
         self._cam = camera_p[0]
+        self._thread_pool = ThreadPoolExecutor(max_workers=1)
         if (bus, address) != (None, None):
             port_name = "usb:{0:03},{1:03}".format(bus, address)
             port_list_p = _get_portinfo_list()[0]
@@ -184,6 +186,41 @@ class Camera(object):
     def remove_file(self, path):
         dirname, fname = os.path.dirname(path), os.path.basename(path)
         lib.gp_camera_file_delete(self._cam, dirname, fname, self._ctx)
+
+    def capture(self, wait=True, to_camera=False, to_file=None):
+        def wait_for_finish():
+            event_type = ffi.new("CameraEventType*")
+            event_data_p = ffi.new("void**", ffi.NULL)
+            while True:
+                lib.gp_camera_wait_for_event(self._cam, 1000, event_type,
+                                             event_data_p, self._ctx)
+                if event_type[0] == lib.GP_EVENT_CAPTURE_COMPLETE:
+                    self._logger.info("Capture completed.")
+                if event_type[0] == lib.GP_EVENT_FILE_ADDED:
+                    break
+            camfile_p = ffi.cast("CameraFilePath*", event_data_p[0])
+            fpath = "{0}/{1}".format(ffi.string(camfile_p[0].folder),
+                                     ffi.string(camfile_p[0].name))
+            self._logger.info("File written to storage at {0}.".format(fpath))
+            if to_camera:
+                return fpath
+            elif to_file:
+                rval = self.save_file(fpath, to_file)
+            else:
+                rval = self.get_file(fpath)
+            self.remove_file(fpath)
+            return rval
+
+        target = self.config['settings']['capturetarget']
+        if to_camera and target.value != "Memory card":
+            target.set("Memory card")
+        elif target.value != "Internal RAM":
+            target.set("Internal RAM")
+        lib.gp_camera_trigger_capture(self._cam, self._ctx)
+        if not wait:
+            return self._thread_pool.submit(wait_for_finish)
+        else:
+            return wait_for_finish()
 
     def get_preview(self):
         raise NotImplementedError
