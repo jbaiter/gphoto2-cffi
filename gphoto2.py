@@ -181,6 +181,10 @@ class Camera(object):
                     buf.size = 0
         dl_thread.join()
 
+    def remove_file(self, path):
+        dirname, fname = os.path.dirname(path), os.path.basename(path)
+        lib.gp_camera_file_delete(self._cam, dirname, fname, self._ctx)
+
     def get_preview(self):
         raise NotImplementedError
 
