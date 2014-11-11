@@ -1,5 +1,6 @@
 import os
 import re
+import threading
 from collections import namedtuple
 from datetime import datetime
 
@@ -120,8 +121,65 @@ class Camera(object):
     def files(self):
         return self._list_files("/")
 
-    def capture(self, wait=False, retrieve=True, keep=False):
-        raise NotImplementedError
+    def save_file(self, path, target_path, ftype='normal'):
+        if ftype not in FILE_TYPES:
+            raise ValueError("`ftype` must be one of {0}"
+                             .format(FILE_TYPES.keys()))
+        dirname, fname = os.path.dirname(path), os.path.basename(path)
+        camfile_p = ffi.new("CameraFile**")
+        with open(target_path, 'wb') as fp:
+            lib.gp_file_new_from_fd(camfile_p, fp.fileno())
+            lib.gp_camera_file_get(self._cam, dirname, fname,
+                                   FILE_TYPES[ftype], camfile_p[0], self._ctx)
+
+    def get_file(self, path, ftype='normal'):
+        if ftype not in FILE_TYPES:
+            raise ValueError("`ftype` must be one of {0}"
+                             .format(FILE_TYPES.keys()))
+        dirname, fname = os.path.dirname(path), os.path.basename(path)
+        camfile_p = ffi.new("CameraFile**")
+        lib.gp_file_new(camfile_p)
+        lib.gp_camera_file_get(self._cam, dirname, fname, FILE_TYPES[ftype],
+                                camfile_p[0], self._ctx)
+        data_p = ffi.new("char**")
+        length_p = ffi.new("unsigned long*")
+        lib.gp_file_get_data_and_size(camfile_p[0], data_p, length_p)
+        return ffi.buffer(data_p[0], length_p[0])[:]
+
+    def stream_file(self, path, ftype='normal'):
+        if ftype not in FILE_TYPES:
+            raise ValueError("`ftype` must be one of {0}"
+                             .format(FILE_TYPES.keys()))
+        dirname, fname = os.path.dirname(path), os.path.basename(path)
+        camfile_p = ffi.new("CameraFile**")
+        buf = ffi.new("StreamingBuffer*")
+        buf_lock = threading.Lock()
+
+        @ffi.callback("int(void*, unsigned char*, uint64_t*)")
+        def write_fn(priv, data_p, length_p):
+            with buf_lock:
+                out_buf = ffi.cast("StreamingBuffer*", priv)
+                out_buf.size = length_p[0]
+                out_buf.data = data_p
+            return 0
+
+        xhandler = ffi.new("CameraFileHandler*")
+        xhandler.read = ffi.NULL
+        xhandler.size = ffi.NULL
+        xhandler.write = write_fn
+        lib.gp_file_new_from_handler(camfile_p, xhandler, buf)
+
+        dl_thread = threading.Thread(
+            target=lib.gp_camera_file_get,
+            args=(self._cam, dirname, fname, FILE_TYPES[ftype], camfile_p[0],
+                  self._ctx))
+        dl_thread.start()
+        while dl_thread.is_alive():
+            with buf_lock:
+                if buf.size:
+                    yield ffi.buffer(buf.data, buf.size)[:]
+                    buf.size = 0
+        dl_thread.join()
 
     def get_preview(self):
         raise NotImplementedError

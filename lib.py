@@ -116,9 +116,16 @@ typedef struct _CameraFileInfo {
     ...;
 } CameraFileInfo;
 
+typedef struct _CameraFileHandler {
+    int (*size) (void*priv, uint64_t *size);
+    int (*read) (void*priv, unsigned char *data, uint64_t *len);
+    int (*write) (void*priv, unsigned char *data, uint64_t *len);
+} CameraFileHandler;
+
 typedef ... CameraFile;
 int gp_file_new            (CameraFile **file);
 int gp_file_new_from_fd    (CameraFile **file, int fd);
+int gp_file_new_from_handler (CameraFile **file, CameraFileHandler *handler, void*priv);
 int gp_file_ref            (CameraFile *file);
 int gp_file_unref          (CameraFile *file);
 int gp_file_free           (CameraFile *file);
@@ -296,13 +303,31 @@ int gp_camera_file_read       (Camera *camera, const char *folder, const char *f
                                GPContext *context);
 int gp_camera_file_delete     (Camera *camera, const char *folder,
                                const char *file, GPContext *context);
+typedef struct {
+    unsigned long  size;
+    char*          data;
+} StreamingBuffer;
 """)
 
 _lib = ffi.verify("""
 #include "gphoto2/gphoto2-context.h"
 #include "gphoto2/gphoto2-camera.h"
 #include <time.h>
+
+typedef struct {
+    unsigned long  size;
+    char*          data;
+} StreamingBuffer;
 """, libraries=["gphoto2"])
+
+FILE_TYPES = {
+    'normal': _lib.GP_FILE_TYPE_NORMAL,
+    'exif': _lib.GP_FILE_TYPE_EXIF,
+    'metadata': _lib.GP_FILE_TYPE_METADATA,
+    'preview': _lib.GP_FILE_TYPE_PREVIEW,
+    'raw': _lib.GP_FILE_TYPE_RAW,
+    'audio': _lib.GP_FILE_TYPE_AUDIO
+}
 
 
 class GPhoto2Error(Exception):
