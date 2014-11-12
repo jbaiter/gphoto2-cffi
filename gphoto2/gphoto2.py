@@ -8,8 +8,8 @@ import re
 from collections import namedtuple
 from datetime import datetime
 
-import backend
-from backend import ffi, lib, get_string, get_ctype, new_gp_object
+from . import backend
+from . backend import ffi, lib, get_string, get_ctype, new_gp_object
 
 Range = namedtuple("Range", ('min', 'max', 'step'))
 ImageDimensions = namedtuple("ImageDimensions", ('width', 'height'))
