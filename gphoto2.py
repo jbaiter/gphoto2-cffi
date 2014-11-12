@@ -214,7 +214,8 @@ class Camera(object):
             port_name = b"usb:{0:03},{1:03}".format(bus, address)
             port_list_p = new_gp_object("GPPortInfoList")
             lib.gp_port_info_list_load(port_list_p)
-            port_info_p = new_gp_object("GPPortInfo")
+            port_info_p = ffi.new("GPPortInfo*")
+            lib.gp_port_info_new(port_info_p)
             port_num = lib.gp_port_info_list_lookup_path(
                 port_list_p, port_name)
             lib.gp_port_info_list_get_info(port_list_p, port_num,
