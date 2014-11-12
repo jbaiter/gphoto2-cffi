@@ -1,4 +1,8 @@
+from __future__ import unicode_literals, division, absolute_import
+
+import functools
 import logging
+import math
 import os
 import re
 import threading
@@ -11,22 +15,108 @@ import backend
 from backend import ffi, lib, get_string, get_ctype, new_gp_object
 
 Range = namedtuple("Range", ('min', 'max', 'step'))
+ImageDimensions = namedtuple("ImageDimensions", ('width', 'height'))
 
 _global_ctx = lib.gp_context_new()
 
+def _infoproperty(prop_func):
+    @functools.wraps(prop_func)
+    def decorated(self, *args, **kwargs):
+        if self._info is None:
+            try:
+                self._update_info()
+            except backend.GPhoto2Error:
+                raise ValueError("Could not get file info, are you sure "
+                                    "the file exists on the device?")
+        return prop_func(self, *args, **kwargs)
+    return property(fget=decorated, doc=prop_func.__doc__)
+
+
 class CameraFile(object):
-    def __init__(self, name, directory, size=None, mimetype=None,
-                 dimensions=None, permissions=None, last_modified=None):
+    def __init__(self, name, directory, camera=None, context=None):
         self.name = name
         self.directory = directory
-        self.size = size
-        self.mimetype = mimetype
-        self.dimensions = dimensions
-        self.permissions = permissions
-        self.last_modified = last_modified
+        self._cam = camera
+        self._ctx = context
+        self._info = None
+
+    @_infoproperty
+    def size(self):
+        return self.info.file.size
+
+    @_infoproperty
+    def mimetype(self):
+        return ffi.string(self.info.file.type)
+
+    @_infoproperty
+    def dimensions(self):
+        return ImageDimensions(self.info.file.width, self.info.file.height)
+
+    @_infoproperty
+    def permissions(self):
+        can_read = self.info.file.permissions & lib.GP_FILE_PERM_READ
+        can_write = self.info.file.permissions & lib.GP_FILE_PERM_DELETE
+        return "{0}{1}".format("r" if can_read else "-",
+                               "w" if can_write else "-")
+
+    @_infoproperty
+    def last_modified(self):
+        return datetime.fromtimestamp(self.info.file.mtime)
+
+    def save(self, target_path, ftype='normal'):
+        if ftype not in backend.FILE_TYPES:
+            raise ValueError("`ftype` must be one of {0}"
+                             .format(backend.FILE_TYPES.keys()))
+        camfile_p = ffi.new("CameraFile**")
+        with open(target_path, 'wb') as fp:
+            lib.gp_file_new_from_fd(camfile_p, fp.fileno())
+            lib.gp_camera_file_get(self._cam, self.directory, self.name,
+                                   backend.FILE_TYPES[ftype], camfile_p[0],
+                                   self._ctx)
+
+    def get_data(self, ftype='normal'):
+        if ftype not in backend.FILE_TYPES:
+            raise ValueError("`ftype` must be one of {0}"
+                             .format(backend.FILE_TYPES.keys()))
+        camfile_p = ffi.new("CameraFile**")
+        lib.gp_file_new(camfile_p)
+        lib.gp_camera_file_get(self._cam, self.directory, self.name,
+                               backend.FILE_TYPES[ftype], camfile_p[0],
+                               self._ctx)
+        data_p = ffi.new("char**")
+        length_p = ffi.new("unsigned long*")
+        lib.gp_file_get_data_and_size(camfile_p[0], data_p, length_p)
+        return ffi.buffer(data_p[0], length_p[0])[:]
+
+    def iter_data(self, ftype='normal', chunk_size=2**16):
+        if ftype not in backend.FILE_TYPES:
+            raise ValueError("`ftype` must be one of {0}"
+                             .format(backend.FILE_TYPES.keys()))
+        camfile_p = ffi.new("CameraFile**")
+        buf_p = ffi.new("char[{0}]".format(chunk_size))
+        size_p = ffi.new("uint64_t*")
+        offset_p = ffi.new("uint64_t*")
+        for chunk_idx in xrange(math.ceil(self.size/chunk_size)):
+            size_p[0] = chunk_size
+            lib.gp_camera_file_read(
+                self._cam, self.directory, self.name,
+                backend.FILE_TYPES[ftype], offset_p[0],
+                buf_p, size_p, self._ctx)
+            yield ffi.buffer(buf_p, size_p[0])[:]
+
+    def remove(self):
+        lib.gp_camera_file_delete(self._cam, self.directory, self.name,
+                                  self._ctx)
+
+    def _update_info(self):
+        info = ffi.new("CameraFileInfo*")
+        lib.gp_camera_file_get_info(self._cam, self.directory, self.name,
+                                    info, self._ctx)
+        self._info = info
 
     def __repr__(self):
-        return "\"{0}/{1}\"".format(self.directory, self.name)
+        return "CameraFile(\"{0}/{1}\")".format(self.directory.rstrip("/"),
+                                                self.name)
 
 
 class ConfigItem(object):
@@ -67,12 +157,12 @@ class ConfigItem(object):
             if value not in self.choices:
                 raise ValueError("Invalid choice (valid: {0}",
                                  repr(self.choices))
-            val_p = ffi.new("const char[]", value)
+            val_p = ffi.new("const char[]", bytes(value))
         elif self.type == 'text':
             if not isinstance(value, basestring):
                 raise ValueError("Value must be a string.")
             val_p = ffi.new("char**")
-            val_p[0] = ffi.new("char[]", value)
+            val_p[0] = ffi.new("char[]", bytes(value))
         elif self.type == 'range':
             if value < self.range.min or value > self.range.max:
                 raise ValueError("Value exceeds valid range ({0}-{1}."
@@ -111,9 +201,9 @@ class ConfigItem(object):
         return Range(rmin, rmax, rinc)
 
     def __repr__(self):
-        return ("<ConfigItem '{0}' [{1}, {2}, R{3}]>"
+        return ("ConfigItem('{0}', {1}, ,{2}, 'r{3}')"
                 .format(self.label, self.type, repr(self.value),
-                        "O" if self.readonly else "W"))
+                        "o" if self.readonly else "w"))
 
 
 class Camera(object):
@@ -124,7 +214,7 @@ class Camera(object):
         self._cam = new_gp_object("Camera")
         self._thread_pool = ThreadPoolExecutor(max_workers=1)
         if (bus, address) != (None, None):
-            port_name = "usb:{0:03},{1:03}".format(bus, address)
+            port_name = b"usb:{0:03},{1:03}".format(bus, address)
             port_list_p = new_gp_object("GPPortInfoList")
             lib.gp_port_info_list_load(port_list_p)
             port_info_p = new_gp_object("GPPortInfo")
@@ -143,70 +233,7 @@ class Camera(object):
 
     @property
     def files(self):
-        return self._recurse_files("/")
-
-    def save_file(self, fobj, target_path, ftype='normal'):
-        if ftype not in backend.FILE_TYPES:
-            raise ValueError("`ftype` must be one of {0}"
-                             .format(backend.FILE_TYPES.keys()))
-        camfile_p = ffi.new("CameraFile**")
-        with open(target_path, 'wb') as fp:
-            lib.gp_file_new_from_fd(camfile_p, fp.fileno())
-            lib.gp_camera_file_get(self._cam, fobj.directory, fobj.name,
-                                   backend.FILE_TYPES[ftype], camfile_p[0],
-                                   self._ctx)
-
-    def get_file(self, fobj, ftype='normal'):
-        if ftype not in backend.FILE_TYPES:
-            raise ValueError("`ftype` must be one of {0}"
-                             .format(backend.FILE_TYPES.keys()))
-        camfile_p = ffi.new("CameraFile**")
-        lib.gp_file_new(camfile_p)
-        lib.gp_camera_file_get(self._cam, fobj.directory, fobj.name,
-                               backend.FILE_TYPES[ftype], camfile_p[0],
-                               self._ctx)
-        data_p = ffi.new("char**")
-        length_p = ffi.new("unsigned long*")
-        lib.gp_file_get_data_and_size(camfile_p[0], data_p, length_p)
-        return ffi.buffer(data_p[0], length_p[0])[:]
-
-    def stream_file(self, fobj, ftype='normal'):
-        if ftype not in backend.FILE_TYPES:
-            raise ValueError("`ftype` must be one of {0}"
-                             .format(backend.FILE_TYPES.keys()))
-        camfile_p = ffi.new("CameraFile**")
-        buf = ffi.new("StreamingBuffer*")
-        buf_lock = threading.Lock()
-
-        @ffi.callback("int(void*, unsigned char*, uint64_t*)")
-        def write_fn(priv, data_p, length_p):
-            with buf_lock:
-                out_buf = ffi.cast("StreamingBuffer*", priv)
-                out_buf.size = length_p[0]
-                out_buf.data = data_p
-            return 0
-
-        xhandler = ffi.new("CameraFileHandler*")
-        xhandler.read = ffi.NULL
-        xhandler.size = ffi.NULL
-        xhandler.write = write_fn
-        lib.gp_file_new_from_handler(camfile_p, xhandler, buf)
-
-        dl_thread = threading.Thread(
-            target=lib.gp_camera_file_get,
-            args=(self._cam, fobj.directory, fobj.name,
-                  backend.FILE_TYPES[ftype], camfile_p[0], self._ctx))
-        dl_thread.start()
-        while dl_thread.is_alive():
-            with buf_lock:
-                if buf.size:
-                    yield ffi.buffer(buf.data, buf.size)[:]
-                    buf.size = 0
-        dl_thread.join()
-
-    def remove_file(self, fobj):
-        lib.gp_camera_file_delete(self._cam, fobj.directory, fobj.name,
-                                  self._ctx)
+        return self._recurse_files(b"/")
 
     def upload_file(self, source_path, target_path, ftype='normal'):
         if ftype not in backend.FILE_TYPES:
@@ -221,7 +248,7 @@ class Camera(object):
                 self._cam, target_dirname, target_fname,
                 backend.FILE_TYPES[ftype], camerafile_p[0], self._ctx)
 
-    def capture(self, wait=True, to_camera=False, to_file=None):
+    def capture(self, wait=True, to_camera_storage=False):
         def wait_for_finish():
             event_type = ffi.new("CameraEventType*")
             event_data_p = ffi.new("void**", ffi.NULL)
@@ -234,21 +261,21 @@ class Camera(object):
                     break
             camfile_p = ffi.cast("CameraFilePath*", event_data_p[0])
             fobj = CameraFile(ffi.string(camfile_p[0].name),
-                              ffi.string(camfile_p[0].folder))
-            self._logger.info("File written to storage at {0}.".format(fobj))
-            if to_camera:
+                              ffi.string(camfile_p[0].folder),
+                              self._cam, self._ctx)
+            if to_camera_storage:
+                self._logger.info("File written to storage at {0}."
+                                  .format(fobj))
                 return fobj
-            elif to_file:
-                rval = self.save_file(fobj, to_file)
             else:
-                rval = self.get_file(fobj)
-            self.remove_file(fobj)
-            return rval
+                data = fobj.get_data()
+                fobj.remove()
+                return data
 
         target = self.config['settings']['capturetarget']
-        if to_camera and target.value != "Memory card":
+        if to_camera_storage and target.value != "Memory card":
             target.set("Memory card")
-        elif not to_camera and target.value != "Internal RAM":
+        elif not to_camera_storage and target.value != "Internal RAM":
             target.set("Internal RAM")
         lib.gp_camera_trigger_capture(self._cam, self._ctx)
         if not wait:
@@ -284,8 +311,8 @@ class Camera(object):
         # Skip files in internal RAM
         files = [] if path == "/" else self._list_files(path)
         for subdir in self._list_directories(path):
-            files.extend(self._recurse_files("{0}/{1}".format(path.rstrip("/"),
-                                                              subdir)))
+            files.extend(self._recurse_files(
+                b"{0}/{1}".format(path.rstrip("/"), subdir)))
         return files
 
     def _list_directories(self, path):
@@ -306,20 +333,7 @@ class Camera(object):
         for idx in xrange(lib.gp_list_count(filelist_p)):
             name = ffi.new("const char**")
             lib.gp_list_get_name(filelist_p, idx, name)
-
-            info = ffi.new("CameraFileInfo*")
-            lib.gp_camera_file_get_info(self._cam, path, name[0], info,
-                                        self._ctx)
-            can_read = info.file.permissions & lib.GP_FILE_PERM_READ
-            can_write = info.file.permissions & lib.GP_FILE_PERM_DELETE
-            permissions = "{0}{1}".format("r" if can_read else "-",
-                                          "w" if can_write else "-")
-            files.append(CameraFile(
-                name=ffi.string(name[0]), directory=path, size=info.file.size,
-                mimetype=ffi.string(info.file.type),
-                dimensions=(info.file.width, info.file.height),
-                permissions=permissions,
-                last_modified=datetime.fromtimestamp(info.file.mtime)))
+            files.append(CameraFile(name[0], path, self._cam, self._ctx))
         lib.gp_list_free(filelist_p)
         return files
 
