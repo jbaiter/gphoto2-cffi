@@ -13,6 +13,7 @@ from backend import ffi, lib, get_string, get_ctype, new_gp_object
 
 Range = namedtuple("Range", ('min', 'max', 'step'))
 ImageDimensions = namedtuple("ImageDimensions", ('width', 'height'))
+UsbDevice = namedtuple("UsbDevice", ('name', 'bus_no', 'device_no'))
 
 _global_ctx = lib.gp_context_new()
 
@@ -338,12 +339,13 @@ def list_cameras():
     lib.gp_abilities_list_load(abilities_list_p, _global_ctx)
     lib.gp_abilities_list_detect(abilities_list_p, port_list_p,
                                  camlist_p, _global_ctx)
-    out = {}
+    out = []
     for idx in xrange(lib.gp_list_count(camlist_p)):
         name = get_string(lib.gp_list_get_name, camlist_p, idx)
         value = get_string(lib.gp_list_get_value, camlist_p, idx)
-        out[name] = tuple(int(x) for x in
-                          re.match(r"usb:(\d+),(\d+)", value).groups())
+        bus_no, device_no = (int(x) for x in
+                             re.match(r"usb:(\d+),(\d+)", value).groups())
+        out.append(UsbDevice(name, bus_no, device_no))
     lib.gp_list_free(camlist_p)
     lib.gp_port_info_list_free(port_list_p)
     lib.gp_abilities_list_free(abilities_list_p)
