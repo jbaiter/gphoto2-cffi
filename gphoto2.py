@@ -5,11 +5,8 @@ import logging
 import math
 import os
 import re
-import threading
 from collections import namedtuple
 from datetime import datetime
-
-from concurrent.futures import ThreadPoolExecutor
 
 import backend
 from backend import ffi, lib, get_string, get_ctype, new_gp_object
@@ -212,7 +209,6 @@ class Camera(object):
         self._logger = logging.getLogger()
         self._ctx = lib.gp_context_new()
         self._cam = new_gp_object("Camera")
-        self._thread_pool = ThreadPoolExecutor(max_workers=1)
         if (bus, address) != (None, None):
             port_name = b"usb:{0:03},{1:03}".format(bus, address)
             port_list_p = new_gp_object("GPPortInfoList")
@@ -248,40 +244,36 @@ class Camera(object):
                 self._cam, target_dirname, target_fname,
                 backend.FILE_TYPES[ftype], camerafile_p[0], self._ctx)
 
-    def capture(self, wait=True, to_camera_storage=False):
-        def wait_for_finish():
-            event_type = ffi.new("CameraEventType*")
-            event_data_p = ffi.new("void**", ffi.NULL)
-            while True:
-                lib.gp_camera_wait_for_event(self._cam, 1000, event_type,
-                                             event_data_p, self._ctx)
-                if event_type[0] == lib.GP_EVENT_CAPTURE_COMPLETE:
-                    self._logger.info("Capture completed.")
-                if event_type[0] == lib.GP_EVENT_FILE_ADDED:
-                    break
-            camfile_p = ffi.cast("CameraFilePath*", event_data_p[0])
-            fobj = CameraFile(ffi.string(camfile_p[0].name),
-                              ffi.string(camfile_p[0].folder),
-                              self._cam, self._ctx)
-            if to_camera_storage:
-                self._logger.info("File written to storage at {0}."
-                                  .format(fobj))
-                return fobj
-            else:
-                data = fobj.get_data()
-                fobj.remove()
-                return data
-
+    def capture(self, to_camera_storage=False):
         target = self.config['settings']['capturetarget']
         if to_camera_storage and target.value != "Memory card":
             target.set("Memory card")
         elif not to_camera_storage and target.value != "Internal RAM":
             target.set("Internal RAM")
         lib.gp_camera_trigger_capture(self._cam, self._ctx)
-        if not wait:
-            return self._thread_pool.submit(wait_for_finish)
+
+        # Wait for capture to finish
+        event_type = ffi.new("CameraEventType*")
+        event_data_p = ffi.new("void**", ffi.NULL)
+        while True:
+            lib.gp_camera_wait_for_event(self._cam, 1000, event_type,
+                                            event_data_p, self._ctx)
+            if event_type[0] == lib.GP_EVENT_CAPTURE_COMPLETE:
+                self._logger.info("Capture completed.")
+            if event_type[0] == lib.GP_EVENT_FILE_ADDED:
+                break
+        camfile_p = ffi.cast("CameraFilePath*", event_data_p[0])
+        fobj = CameraFile(ffi.string(camfile_p[0].name),
+                            ffi.string(camfile_p[0].folder),
+                            self._cam, self._ctx)
+        if to_camera_storage:
+            self._logger.info("File written to storage at {0}."
+                                .format(fobj))
+            return fobj
         else:
-            return wait_for_finish()
+            data = fobj.get_data()
+            fobj.remove()
+            return data
 
     def get_preview(self):
         camfile_p = ffi.new("CameraFile**")
