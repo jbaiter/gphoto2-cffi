@@ -1,3 +1,5 @@
+import logging
+
 from cffi import FFI
 ffi = FFI()
 
@@ -303,6 +305,16 @@ int gp_camera_file_read       (Camera *camera, const char *folder, const char *f
                                GPContext *context);
 int gp_camera_file_delete     (Camera *camera, const char *folder,
                                const char *file, GPContext *context);
+
+typedef enum {
+    GP_LOG_ERROR = 0,
+    GP_LOG_VERBOSE = 1,
+    GP_LOG_DEBUG = 2,
+    GP_LOG_DATA = 3
+} GPLogLevel;
+typedef void(*  GPLogFunc )(GPLogLevel level, const char *domain, const char *str, void *data);
+int gp_log_add_func (GPLogLevel level, GPLogFunc func, void *data);
+
 typedef struct {
     unsigned long  size;
     char*          data;
@@ -320,6 +332,25 @@ typedef struct {
 } StreamingBuffer;
 """, libraries=["gphoto2"])
 
+LOG_LEVELS = {
+    _lib.GP_LOG_ERROR:   logging.ERROR,
+    _lib.GP_LOG_VERBOSE: logging.INFO,
+    _lib.GP_LOG_DEBUG:   logging.DEBUG
+}
+
+_loggers = {}
+
+@ffi.callback("void(GPLogLevel, const char*, const char*, void*)")
+def logging_callback(level, domain, message, data):
+    logger_name = ffi.string(domain)
+    if level not in LOG_LEVELS:
+        return
+    if logger_name not in _loggers:
+        _loggers[logger_name] = logging.getLogger("libgphoto2." + logger_name)
+    _loggers[logger_name].log(LOG_LEVELS[level], ffi.string(message))
+
+_lib.gp_log_add_func(_lib.GP_LOG_DEBUG, logging_callback, ffi.NULL)
+
 
 class GPhoto2Error(Exception):
     def __init__(self, errcode):
@@ -335,6 +366,7 @@ def check_error(rval):
 
 class LibraryWrapper(object):
     BLACKLIST = (
+        "gp_log_add_func",
         "gp_context_new",
         "gp_list_count",
         "gp_widget_count_choices",
