@@ -245,7 +245,13 @@ class Camera(object):
             return wait_for_finish()
 
     def get_preview(self):
-        raise NotImplementedError
+        camfile_p = ffi.new("CameraFile**")
+        lib.gp_file_new(camfile_p)
+        lib.gp_camera_capture_preview(self._cam, camfile_p[0], self._ctx)
+        data_p = ffi.new("char**")
+        length_p = ffi.new("unsigned long*")
+        lib.gp_file_get_data_and_size(camfile_p[0], data_p, length_p)
+        return ffi.buffer(data_p[0], length_p[0])[:]
 
     def _widget_to_dict(self, cwidget):
         out = {}
