@@ -338,16 +338,25 @@ LOG_LEVELS = {
     _lib.GP_LOG_DEBUG:   logging.DEBUG
 }
 
-_loggers = {}
+_root_logger = logging.getLogger("libgphoto2")
 
 @ffi.callback("void(GPLogLevel, const char*, const char*, void*)")
 def logging_callback(level, domain, message, data):
-    logger_name = ffi.string(domain)
+    domain = ffi.string(domain)
+    message = ffi.string(message)
+    logger = _root_logger.getChild(domain)
+
+    #FIXME: This has got to be the weirdest bug ever... Removing this statement
+    #       increases the number of calls to this callback manifold and
+    #       subsequently more than doubles the runtime in my benchmarks.
+    #       It does not matter which file is opened, and you don't have to
+    #       write anything to it, you don't even have to close it
+    #       (though this is done here anyway...).
+    open("/dev/null").close()
+
     if level not in LOG_LEVELS:
         return
-    if logger_name not in _loggers:
-        _loggers[logger_name] = logging.getLogger("libgphoto2." + logger_name)
-    _loggers[logger_name].log(LOG_LEVELS[level], ffi.string(message))
+    logger.log(LOG_LEVELS[level], message)
 
 _lib.gp_log_add_func(_lib.GP_LOG_DEBUG, logging_callback, ffi.NULL)
 
