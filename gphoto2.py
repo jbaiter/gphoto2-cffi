@@ -206,9 +206,13 @@ class ConfigItem(object):
 
 class Camera(object):
     def __init__(self, bus=None, address=None):
-        # TODO: Can we use a single global context?
         self._logger = logging.getLogger()
+
+        # NOTE: It is not strictly neccessary to create a context for every
+        #       device, however it is significantly (>500ms) faster when
+        #       actions are to be performed simultaneously.
         self._ctx = lib.gp_context_new()
+
         self._cam = new_gp_object("Camera")
         if (bus, address) != (None, None):
             port_name = b"usb:{0:03},{1:03}".format(bus, address)
