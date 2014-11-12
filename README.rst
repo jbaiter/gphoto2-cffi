@@ -5,7 +5,9 @@ Python bindings for `libgphoto2`_ with an idiomatic interface and `PyPy`_
 support, using `cffi`_. In contrast to other bindings for Python, gphoto2-cffi
 hides most of the lower-level abstractions and allows you to work with an
 elegent API that exposes most of the library's features in an idiomatic
-interface::
+interface:
+
+.. code:: python
 
     import gphoto2 as gp
 
@@ -61,5 +63,5 @@ From Source::
 Similar projects
 ----------------
 
-* `piggyphoto<https://github.com/alexdu/piggyphoto>`_: Uses ctypes
-* `python-gphoto2<https://github.com/jim-easterbrook/python-gphoto2>`_: Uses SWIG
+* `piggyphoto <https://github.com/alexdu/piggyphoto>`_: Uses ctypes
+* `python-gphoto2 <https://github.com/jim-easterbrook/python-gphoto2>`_: Uses SWIG
