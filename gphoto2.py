@@ -223,6 +223,9 @@ class Camera(object):
             lib.gp_camera_set_port_info(self._cam, port_info_p[0])
         lib.gp_camera_init(self._cam, self._ctx)
 
+    def __del__(self):
+        lib.gp_camera_free(self._cam)
+
     @property
     def config(self):
         root_widget = ffi.new("CameraWidget**")
