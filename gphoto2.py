@@ -18,6 +18,9 @@ UsbDevice = namedtuple("UsbDevice", ('name', 'bus_no', 'device_no'))
 _global_ctx = lib.gp_context_new()
 
 def _infoproperty(prop_func):
+    """ Decorator that creates a property method that checks for the presence
+        of the _info struct and updates it, if absent.
+    """
     @functools.wraps(prop_func)
     def decorated(self, *args, **kwargs):
         if self._info is None:
@@ -31,6 +34,7 @@ def _infoproperty(prop_func):
 
 
 class CameraFile(object):
+    """ A file on the camera. """
     def __init__(self, name, directory, camera=None, context=None):
         self.name = name
         self.directory = directory
@@ -40,18 +44,37 @@ class CameraFile(object):
 
     @_infoproperty
     def size(self):
+        """ File size in bytes.
+
+        :rtype: int
+        """
         return self.info.file.size
 
     @_infoproperty
     def mimetype(self):
+        """ MIME type of the file.
+
+        :rtype: str
+        """
         return ffi.string(self.info.file.type)
 
     @_infoproperty
     def dimensions(self):
+        """ Dimensions of the image.
+
+        :rtype: :py:class:`ImageDimensions`
+        """
         return ImageDimensions(self.info.file.width, self.info.file.height)
 
     @_infoproperty
     def permissions(self):
+        """ Permissions of the file.
+
+        Can be "r-" (read-only), "-w" (write-only), "rw" (read-write)
+        or "--" (no rights).
+
+        :rtype: str
+        """
         can_read = self.info.file.permissions & lib.GP_FILE_PERM_READ
         can_write = self.info.file.permissions & lib.GP_FILE_PERM_DELETE
         return "{0}{1}".format("r" if can_read else "-",
@@ -59,9 +82,20 @@ class CameraFile(object):
 
     @_infoproperty
     def last_modified(self):
+        """ Date of last modification.
+
+        :rtype: :py:class:`datetime.datetime`
+        """
         return datetime.fromtimestamp(self.info.file.mtime)
 
     def save(self, target_path, ftype='normal'):
+        """ Save file content to a local file.
+
+        :param target_path: Path to save remote file as.
+        :type target_path:  str/unicode
+        :param ftype:       Select 'view' on file.
+        :type ftype:        str
+        """
         if ftype not in backend.FILE_TYPES:
             raise ValueError("`ftype` must be one of {0}"
                              .format(backend.FILE_TYPES.keys()))
@@ -73,6 +107,13 @@ class CameraFile(object):
                                    self._ctx)
 
     def get_data(self, ftype='normal'):
+        """ Get file content as a bytestring.
+
+        :param ftype:       Select 'view' on file.
+        :type ftype:        str
+        :return:            File content
+        :rtype:             bytes
+        """
         if ftype not in backend.FILE_TYPES:
             raise ValueError("`ftype` must be one of {0}"
                              .format(backend.FILE_TYPES.keys()))
@@ -87,6 +128,14 @@ class CameraFile(object):
         return ffi.buffer(data_p[0], length_p[0])[:]
 
     def iter_data(self, ftype='normal', chunk_size=2**16):
+        """ Get an iterator that yields chunks of the file content.
+
+        :param ftype:       Select 'view' on file.
+        :type ftype:        str
+        :param chunk_size:  Size of yielded chunks in bytes
+        :type chunk_size:   int
+        :return:            Iterator
+        """
         if ftype not in backend.FILE_TYPES:
             raise ValueError("`ftype` must be one of {0}"
                              .format(backend.FILE_TYPES.keys()))
@@ -103,6 +152,7 @@ class CameraFile(object):
             yield ffi.buffer(buf_p, size_p[0])[:]
 
     def remove(self):
+        """ Remove file from device. """
         lib.gp_camera_file_delete(self._cam, self.directory, self.name,
                                   self._ctx)
 
@@ -118,6 +168,20 @@ class CameraFile(object):
 
 
 class ConfigItem(object):
+    """ A configuration option on the device.
+
+    :attr name:     Short name
+    :attr value:    Current value
+    :attr type:     Type of option, can be one of `selection`, `text`,
+                    `range`, `toggle` or `date`.
+    :attr label:    Human-readable label
+    :attr info:     Information about the widget
+    :attr choices:  Valid choices for value, only present when :py:attr:`type`
+                    is `selection`.
+    :attr range:    Valid range for value, only present when :py:attr:`type`
+                    is `range`.
+    :attr readonly: Whether the value can be written to or not
+    """
     def __init__(self, widget, cam, ctx):
         self._widget = widget
         root_p = ffi.new("CameraWidget**")
@@ -150,6 +214,18 @@ class ConfigItem(object):
             "int*", lib.gp_widget_get_readonly, widget))
 
     def set(self, value):
+        """ Update value of the option.
+
+        Only possible for options with :py:attr:`readonly` set to `False`.
+        If :py:attr:`type` is `choice`, the value must be one of the
+        :py:attr:`choices`.
+        If :py:attr:`type` is `range`, the value must be in the range
+        described by :py:attr:`range`.
+
+        :param value:   Value to set
+        """
+        if self.readonly:
+            raise ValueError("Option is read-only.")
         val_p = None
         if self.type == 'selection':
             if value not in self.choices:
@@ -205,7 +281,15 @@ class ConfigItem(object):
 
 
 class Camera(object):
-    def __init__(self, bus=None, address=None):
+    def __init__(self, bus=None, device=None):
+        """ A camera device.
+
+        The specific device can be auto-detected or set manually by
+        specifying the USB bus and device number.
+
+        :param bus:     USB bus number
+        :param device: USB device number
+        """
         self._logger = logging.getLogger()
 
         # NOTE: It is not strictly neccessary to create a context for every
@@ -214,8 +298,8 @@ class Camera(object):
         self._ctx = lib.gp_context_new()
 
         self._cam = new_gp_object("Camera")
-        if (bus, address) != (None, None):
-            port_name = b"usb:{0:03},{1:03}".format(bus, address)
+        if (bus, device) != (None, None):
+            port_name = b"usb:{0:03},{1:03}".format(bus, device)
             port_list_p = new_gp_object("GPPortInfoList")
             lib.gp_port_info_list_load(port_list_p)
             port_info_p = ffi.new("GPPortInfo*")
@@ -232,12 +316,17 @@ class Camera(object):
 
     @property
     def config(self):
+        """ Configuration for the camera.
+
+        :rtype:     dict
+        """
         root_widget = ffi.new("CameraWidget**")
         lib.gp_camera_get_config(self._cam, root_widget, self._ctx)
         return self._widget_to_dict(root_widget[0])
 
     @property
     def files(self):
+        """ List of files on the camera's permanent storage. """
         return self._recurse_files(b"/")
 
     def upload_file(self, source_path, target_path, ftype='normal'):
@@ -254,6 +343,14 @@ class Camera(object):
                 backend.FILE_TYPES[ftype], camerafile_p[0], self._ctx)
 
     def capture(self, to_camera_storage=False):
+        """ Capture an image.
+
+        :param to_camera_storage:   Save image to the camera's internal storage
+        :type to_camera_storage:    bool
+        :return:    A :py:class:`CameraFile` if `to_camera_storage` was `True`,
+                    otherwise the captured image as a bytestring.
+        :rtype:     :py:class:`CameraFile` or bytes
+        """
         target = self.config['settings']['capturetarget']
         if to_camera_storage and target.value != "Memory card":
             target.set("Memory card")
@@ -273,8 +370,8 @@ class Camera(object):
                 break
         camfile_p = ffi.cast("CameraFilePath*", event_data_p[0])
         fobj = CameraFile(ffi.string(camfile_p[0].name),
-                            ffi.string(camfile_p[0].folder),
-                            self._cam, self._ctx)
+                          ffi.string(camfile_p[0].folder),
+                          self._cam, self._ctx)
         if to_camera_storage:
             self._logger.info("File written to storage at {0}."
                                 .format(fobj))
@@ -285,6 +382,11 @@ class Camera(object):
             return data
 
     def get_preview(self):
+        """ Get a preview from the camera's viewport.
+
+        :return:    The preview image as a bytestring
+        :rtype:     bytes
+        """
         camfile_p = ffi.new("CameraFile**")
         lib.gp_file_new(camfile_p)
         lib.gp_camera_capture_preview(self._cam, camfile_p[0], self._ctx)
@@ -334,12 +436,18 @@ class Camera(object):
         for idx in xrange(lib.gp_list_count(filelist_p)):
             name = ffi.new("const char**")
             lib.gp_list_get_name(filelist_p, idx, name)
-            files.append(CameraFile(name[0], path, self._cam, self._ctx))
+            files.append(CameraFile(ffi.string(name[0]), path, self._cam,
+                                    self._ctx))
         lib.gp_list_free(filelist_p)
         return files
 
 
 def list_cameras():
+    """ List all attached USB cameras that are supported by libgphoto2.
+
+    :return:    All recognized cameras
+    :rtype:     list of :py:class:`UsbDevice`
+    """
     camlist_p = new_gp_object("CameraList")
     port_list_p = new_gp_object("GPPortInfoList")
     lib.gp_port_info_list_load(port_list_p)
