@@ -13,6 +13,7 @@ from backend import ffi, lib, get_string, get_ctype, new_gp_object
 Range = namedtuple("Range", ('min', 'max', 'step'))
 
 _global_ctx = lib.gp_context_new()
+
 class CameraFile(object):
     def __init__(self, name, directory, size=None, mimetype=None,
                  dimensions=None, permissions=None, last_modified=None):
@@ -29,8 +30,13 @@ class CameraFile(object):
 
 
 class ConfigItem(object):
-    def __init__(self, widget):
+    def __init__(self, widget, cam, ctx):
         self._widget = widget
+        root_p = ffi.new("CameraWidget**")
+        lib.gp_widget_get_root(self._widget, root_p)
+        self._root = root_p[0]
+        self._cam = cam
+        self._ctx = ctx
         self.name = get_string(lib.gp_widget_get_name, widget)
         typenum = get_ctype("CameraWidgetType*", lib.gp_widget_get_type,
                             widget)
@@ -61,8 +67,7 @@ class ConfigItem(object):
             if value not in self.choices:
                 raise ValueError("Invalid choice (valid: {0}",
                                  repr(self.choices))
-            val_p = ffi.new("char**")
-            val_p[0] = ffi.new("char[]", value)
+            val_p = ffi.new("const char[]", value)
         elif self.type == 'text':
             if not isinstance(value, basestring):
                 raise ValueError("Value must be a string.")
@@ -76,13 +81,17 @@ class ConfigItem(object):
                 raise ValueError("Value can only be changed in steps of {0}."
                                  .format(self.range.step))
             val_p = ffi.new("float*")
+            val_p[0] = value
         elif self.type == 'toggle':
             if not isinstance(value, bool):
                 raise ValueError("Value must be bool.")
             val_p = ffi.new("int*")
+            val_p[0] = value
         elif self.type == 'date':
             val_p = ffi.new("int*")
+            val_p[0] = value
         lib.gp_widget_set_value(self._widget, val_p)
+        lib.gp_camera_set_config(self._cam, self._root, self._ctx)
 
     def _read_choices(self):
         if self.type != 'selection':
