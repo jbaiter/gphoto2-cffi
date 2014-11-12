@@ -163,7 +163,7 @@ typedef enum {                                  /* Value (get/set): */
     GP_WIDGET_DATE      /**< \brief Date entering widget. */        /* int          */
 } CameraWidgetType;
 
-int     gp_widget_new   (CameraWidgetType type, const char *label, 
+int     gp_widget_new   (CameraWidgetType type, const char *label,
                  CameraWidget **widget);
 int     gp_widget_free  (CameraWidget *widget);
 int     gp_widget_ref   (CameraWidget *widget);
@@ -173,14 +173,14 @@ int gp_widget_append    (CameraWidget *widget, CameraWidget *child);
 int     gp_widget_prepend   (CameraWidget *widget, CameraWidget *child);
 
 int     gp_widget_count_children     (CameraWidget *widget);
-int gp_widget_get_child      (CameraWidget *widget, int child_number, 
+int gp_widget_get_child      (CameraWidget *widget, int child_number,
                       CameraWidget **child);
 
 /* Retrieve Widgets */
 int gp_widget_get_child_by_label (CameraWidget *widget,
                       const char *label,
                       CameraWidget **child);
-int gp_widget_get_child_by_id    (CameraWidget *widget, int id, 
+int gp_widget_get_child_by_id    (CameraWidget *widget, int id,
                       CameraWidget **child);
 int gp_widget_get_child_by_name  (CameraWidget *widget,
                                       const char *name,
@@ -203,14 +203,14 @@ int gp_widget_get_id    (CameraWidget *widget, int *id);
 int gp_widget_get_type  (CameraWidget *widget, CameraWidgetType *type);
 int gp_widget_get_label (CameraWidget *widget, const char **label);
 
-int gp_widget_set_range (CameraWidget *range, 
+int gp_widget_set_range (CameraWidget *range,
                  float  low, float  high, float  increment);
-int gp_widget_get_range (CameraWidget *range, 
+int gp_widget_get_range (CameraWidget *range,
                  float *min, float *max, float *increment);
 
 int gp_widget_add_choice     (CameraWidget *widget, const char *choice);
 int gp_widget_count_choices  (CameraWidget *widget);
-int gp_widget_get_choice     (CameraWidget *widget, int choice_number, 
+int gp_widget_get_choice     (CameraWidget *widget, int choice_number,
                                   const char **choice);
 
 int gp_widget_changed        (CameraWidget *widget);
@@ -320,15 +320,6 @@ typedef struct {
 } StreamingBuffer;
 """, libraries=["gphoto2"])
 
-FILE_TYPES = {
-    'normal': _lib.GP_FILE_TYPE_NORMAL,
-    'exif': _lib.GP_FILE_TYPE_EXIF,
-    'metadata': _lib.GP_FILE_TYPE_METADATA,
-    'preview': _lib.GP_FILE_TYPE_PREVIEW,
-    'raw': _lib.GP_FILE_TYPE_RAW,
-    'audio': _lib.GP_FILE_TYPE_AUDIO
-}
-
 
 class GPhoto2Error(Exception):
     def __init__(self, errcode):
@@ -366,3 +357,55 @@ class LibraryWrapper(object):
             return val
 
 lib = LibraryWrapper(_lib)
+
+FILE_TYPES = {
+    'normal': _lib.GP_FILE_TYPE_NORMAL,
+    'exif': _lib.GP_FILE_TYPE_EXIF,
+    'metadata': _lib.GP_FILE_TYPE_METADATA,
+    'preview': _lib.GP_FILE_TYPE_PREVIEW,
+    'raw': _lib.GP_FILE_TYPE_RAW,
+    'audio': _lib.GP_FILE_TYPE_AUDIO
+}
+
+CONSTRUCTORS = {
+    "Camera":       lib.gp_camera_new,
+    "GPPortInfo":   lib.gp_port_info_new,
+    "CameraList":   lib.gp_list_new,
+    "CameraAbilitiesList": lib.gp_abilities_list_new,
+    "GPPortInfoList": lib.gp_port_info_list_new,
+}
+
+WIDGET_TYPES = {
+    lib.GP_WIDGET_MENU:     "selection",
+    lib.GP_WIDGET_RADIO:    "selection",
+    lib.GP_WIDGET_TEXT:     "text",
+    lib.GP_WIDGET_RANGE:    "range",
+    lib.GP_WIDGET_DATE:     "date",
+    lib.GP_WIDGET_TOGGLE:   "toggle",
+    lib.GP_WIDGET_WINDOW:   "window",
+    lib.GP_WIDGET_SECTION:  "section",
+}
+
+def get_string(cfunc, *args):
+    """ Call a C function and return its return value as a Python string. """
+    cstr = get_ctype("const char**", cfunc, *args)
+    return ffi.string(cstr) if cstr else None
+
+
+def get_ctype(rtype, cfunc, *args):
+    """ Call a C function that takes a pointer as its last argument and
+        return the C object that it contains after the function has finished.
+    """
+    val_p = ffi.new(rtype)
+    args = args + (val_p,)
+    cfunc(*args)
+    return val_p[0]
+
+
+def new_gp_object(typename):
+    """ Create an indirect pointer to a GPhoto2 type, call its matching
+        constructor function and return the pointer to it.
+    """
+    obj_p = ffi.new("{0}**".format(typename))
+    CONSTRUCTORS[typename](obj_p)
+    return obj_p[0]
