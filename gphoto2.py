@@ -208,6 +208,18 @@ class Camera(object):
         lib.gp_camera_file_delete(self._cam, fobj.directory, fobj.name,
                                   self._ctx)
 
+    def upload_file(self, source_path, target_path, ftype='normal'):
+        if ftype not in backend.FILE_TYPES:
+            raise ValueError("`ftype` must be one of {0}"
+                             .format(backend.FILE_TYPES.keys()))
+        target_dirname, target_fname = (os.path.dirname(target_path),
+                                        os.path.basename(target_path))
+        camerafile_p = ffi.new("CameraFile**")
+        with open(source_path, 'rb') as fp:
+            lib.gp_file_new_from_fd(camerafile_p, fp.fileno())
+            lib.gp_camera_folder_put_file(
+                self._cam, target_dirname, target_fname,
+                backend.FILE_TYPES[ftype], camerafile_p[0], self._ctx)
 
     def capture(self, wait=True, to_camera=False, to_file=None):
         def wait_for_finish():
