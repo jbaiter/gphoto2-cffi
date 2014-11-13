@@ -16,6 +16,8 @@ from .backend import ffi, lib, get_string, get_ctype, new_gp_object
 
 Range = namedtuple("Range", ('min', 'max', 'step'))
 ImageDimensions = namedtuple("ImageDimensions", ('width', 'height'))
+UsbInformation = namedtuple("UsbInformation", ('vendor', 'product', 'devclass',
+                                               'subclass', 'protocol'))
 StorageInformation = namedtuple(
     "StorageInformation",
     ('label', 'directory', 'description', 'type', 'accesstype',
@@ -460,6 +462,22 @@ class Camera(object):
             self._initialize()
         return tuple(op for op in CameraOperations
                      if self._abilities.operations & op)
+
+    @property
+    def usb_info(self):
+        if self._abilities is None:
+            self._initialize()
+        return UsbInformation(self._abilities.usb_vendor,
+                              self._abilities.usb_product,
+                              self._abilities.usb_class,
+                              self._abilities.usb_subclass,
+                              self._abilities.usb_protocol)
+
+    @property
+    def model_name(self):
+        if self._abilities is None:
+            self._initialize()
+        return ffi.string(self._abilities.model)
 
     @property
     @_needs_initialized
