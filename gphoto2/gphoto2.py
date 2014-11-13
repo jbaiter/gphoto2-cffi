@@ -8,11 +8,31 @@ import re
 from collections import namedtuple
 from datetime import datetime
 
+from enum import IntEnum
+
 from . import backend
 from .backend import ffi, lib, get_string, get_ctype, new_gp_object
 
 Range = namedtuple("Range", ('min', 'max', 'step'))
 ImageDimensions = namedtuple("ImageDimensions", ('width', 'height'))
+FileOperations = IntEnum(b'FileOperations', {
+    'remove': lib.GP_FILE_OPERATION_DELETE,
+    'extract_preview': lib.GP_FILE_OPERATION_PREVIEW,
+    'extract_raw': lib.GP_FILE_OPERATION_RAW,
+    'extract_audio': lib.GP_FILE_OPERATION_AUDIO,
+    'extract_exif': lib.GP_FILE_OPERATION_EXIF})
+CameraOperations = IntEnum(b'CameraOperations', {
+    'capture_image': lib.GP_OPERATION_CAPTURE_IMAGE,
+    'capture_video': lib.GP_OPERATION_CAPTURE_VIDEO,
+    'capture_audio': lib.GP_OPERATION_CAPTURE_AUDIO,
+    'capture_preview': lib.GP_OPERATION_CAPTURE_PREVIEW,
+    'update_config': lib.GP_OPERATION_CONFIG,
+    'trigger_capture': lib.GP_OPERATION_TRIGGER_CAPTURE})
+DirectoryOperations = IntEnum(b'DirectoryOperations', {
+    'remove': lib.GP_FOLDER_OPERATION_REMOVE_DIR,
+    'create': lib.GP_FOLDER_OPERATION_MAKE_DIR,
+    'delete_all': lib.GP_FOLDER_OPERATION_DELETE_ALL,
+    'upload': lib.GP_FOLDER_OPERATION_PUT_FILE})
 
 _global_ctx = lib.gp_context_new()
 
@@ -43,6 +63,19 @@ def _needs_initialized(func):
             self._initialize()
         return func(self, *args, **kwargs)
     return decorated
+
+
+def _needs_op(op):
+    # TODO: Is this really needed? Check if the library responds with sensible
+    # error messages on unsupported operations?
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapped(self, *args, **kwargs):
+            if op not in self.supported_operations:
+                raise RuntimeError("Device does not support this operation.")
+            return func(self, *args, **kwargs)
+        return wrapped
+    return decorator
 
 
 
@@ -313,11 +346,16 @@ class Camera(object):
         self._usb_address = (bus, device)
         self._abilities = _abilities
 
-    def __del__(self):
-        lib.gp_camera_free(self._cam)
+    @property
+    def supported_operations(self):
+        if self._abilities is None:
+            self._initialize()
+        return tuple(op for op in CameraOperations
+                     if self._abilities.operations & op)
 
     @property
     @_needs_initialized
+    @_needs_op(CameraOperations.update_config)
     def config(self):
         """ Configuration for the camera.
 
@@ -348,6 +386,7 @@ class Camera(object):
                 backend.FILE_TYPES[ftype], camerafile_p[0], self._ctx)
 
     @_needs_initialized
+    @_needs_op(CameraOperations.trigger_capture)
     def capture(self, to_camera_storage=False):
         """ Capture an image.
 
@@ -388,6 +427,7 @@ class Camera(object):
             return data
 
     @_needs_initialized
+    @_needs_op(CameraOperations.capture_preview)
     def get_preview(self):
         """ Get a preview from the camera's viewport.
 
@@ -466,6 +506,10 @@ class Camera(object):
                                     self._ctx))
         lib.gp_list_free(filelist_p)
         return files
+
+    def __del__(self):
+        if self._initialized:
+            lib.gp_camera_free(self._cam)
 
 
 def list_cameras():

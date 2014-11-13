@@ -2,7 +2,7 @@ import os
 import sys
 from setuptools import setup
 
-import gphoto2.backend
+from gphoto2.backend import ffi
 
 if os.path.exists('README.rst'):
     if sys.version_info > (3,):
@@ -29,7 +29,10 @@ setup(
     license='LGPLv3',
     packages=['gphoto2'],
     zip_safe=False,
-    ext_modules=[gphoto2.backend.ffi.verifier.get_extension()],
-    install_requires=['cffi >= 0.8'],
+    ext_modules=[ffi.verifier.get_extension()],
+    install_requires=[
+        'cffi >= 0.8',
+        'enum34 >= 1.0.3'
+    ],
     setup_requires=['cffi >= 0.8']
 )
