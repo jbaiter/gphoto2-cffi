@@ -483,10 +483,12 @@ class LibraryWrapper(object):
         "gp_widget_count_choices",
         "gp_widget_count_children",
         "gp_result_as_string",
-        # This one's a bit nasty, since its return value can be both an index
+        # These are a bit nasty, since their return value can be both an index
         # *or* an error code...
-        "gp_port_info_list_lookup_path"
+        "gp_port_info_list_lookup_path",
+        "gp_abilities_list_lookup_model"
     )
+
     def __init__(self, to_wrap):
         """ Wrapper around our libgphoto2 FFI object.
 

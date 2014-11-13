@@ -1,6 +1,7 @@
 from __future__ import unicode_literals, division, absolute_import
 
 import functools
+import itertools
 import logging
 import math
 import os
@@ -78,15 +79,105 @@ def _needs_op(op):
     return decorator
 
 
+class Directory(object):
+    def __init__(self, name, parent, file_ops, dir_ops, camera, context):
+        self.name = name
+        self.parent = parent
+        self._file_ops = file_ops
+        self._dir_ops = dir_ops
+        self._cam = camera
+        self._ctx = context
 
-class CameraFile(object):
+    @property
+    def path(self):
+        if self.parent is None:
+            return "/"
+        else:
+            return os.path.join(self.parent.path, self.name)
+
+    @property
+    def supported_operations(self):
+        return tuple(op for op in DirectoryOperations
+                     if self._dir_ops & op)
+
+    @property
+    def exists(self):
+        if self.name in ("", "/") and self.parent is None:
+            return True
+        else:
+            return self in self.parent.directories
+
+    @property
+    def files(self):
+        filelist_p = new_gp_object("CameraList")
+        lib.gp_camera_folder_list_files(self._cam, bytes(self.path),
+                                        filelist_p, self._ctx)
+        for idx in xrange(lib.gp_list_count(filelist_p)):
+            yield File(
+                get_string(lib.gp_list_get_name, filelist_p, idx),
+                self, self._file_ops, self._cam, self._ctx)
+        lib.gp_list_free(filelist_p)
+
+    @property
+    def directories(self):
+        dirlist_p = new_gp_object("CameraList")
+        lib.gp_camera_folder_list_folders(self._cam, bytes(self.path),
+                                          dirlist_p, self._ctx)
+        for idx in xrange(lib.gp_list_count(dirlist_p)):
+            yield Directory(
+                os.path.join(self.path,
+                             get_string(lib.gp_list_get_name, dirlist_p, idx)),
+                parent=self, dir_ops=self._dir_ops, file_ops=self._file_ops,
+                camera=self._cam, context=self._ctx)
+        lib.gp_list_free(dirlist_p)
+
+    @_needs_op(DirectoryOperations.create)
+    def create(self):
+        lib.gp_camera_folder_make_dir(self._cam, self.parent.path, self.name,
+                                      self._ctx)
+
+    @_needs_op(DirectoryOperations.remove)
+    def remove(self, recurse=False):
+        lib.gp_camera_folder_remove_dir(self._cam, self.parent.path, self.name,
+                                        self._ctx)
+
+    @_needs_op(DirectoryOperations.upload)
+    def upload(self, local_path):
+        """ Upload a file to the camera's permanent storage.
+
+        :param local_path: Path to file to copy
+        :type local_path:  str/unicode
+        """
+        camerafile_p = ffi.new("CameraFile**")
+        with open(local_path, 'rb') as fp:
+            lib.gp_file_new_from_fd(camerafile_p, fp.fileno())
+            lib.gp_camera_folder_put_file(
+                self._cam, self.path, os.path.basename(local_path),
+                backend.FILE_TYPES['normal'], camerafile_p[0], self._ctx)
+
+    def __eq__(self, other):
+        return (self.name == other.name and
+                self.parent == other.parent and
+                self._cam == other._cam)
+
+    def __repr__(self):
+        return "Directory(\"{0}\")".format(self.path)
+
+
+class File(object):
     """ A file on the camera. """
-    def __init__(self, name, directory, camera=None, context=None):
+    def __init__(self, name, directory, operations, camera, context):
         self.name = name
         self.directory = directory
         self._cam = camera
         self._ctx = context
+        self._operations = operations
         self._info = None
+
+    @property
+    def supported_operations(self):
+        return tuple(op for op in FileOperations
+                     if self._operations & op)
 
     @_infoproperty
     def size(self):
@@ -94,7 +185,7 @@ class CameraFile(object):
 
         :rtype: int
         """
-        return self.info.file.size
+        return self._info.file.size
 
     @_infoproperty
     def mimetype(self):
@@ -102,7 +193,7 @@ class CameraFile(object):
 
         :rtype: str
         """
-        return ffi.string(self.info.file.type)
+        return ffi.string(self._info.file.type)
 
     @_infoproperty
     def dimensions(self):
@@ -110,7 +201,7 @@ class CameraFile(object):
 
         :rtype: :py:class:`ImageDimensions`
         """
-        return ImageDimensions(self.info.file.width, self.info.file.height)
+        return ImageDimensions(self._info.file.width, self._info.file.height)
 
     @_infoproperty
     def permissions(self):
@@ -121,8 +212,8 @@ class CameraFile(object):
 
         :rtype: str
         """
-        can_read = self.info.file.permissions & lib.GP_FILE_PERM_READ
-        can_write = self.info.file.permissions & lib.GP_FILE_PERM_DELETE
+        can_read = self._info.file.permissions & lib.GP_FILE_PERM_READ
+        can_write = self._info.file.permissions & lib.GP_FILE_PERM_DELETE
         return "{0}{1}".format("r" if can_read else "-",
                                "w" if can_write else "-")
 
@@ -132,7 +223,7 @@ class CameraFile(object):
 
         :rtype: :py:class:`datetime.datetime`
         """
-        return datetime.fromtimestamp(self.info.file.mtime)
+        return datetime.fromtimestamp(self._info.file.mtime)
 
     def save(self, target_path, ftype='normal'):
         """ Save file content to a local file.
@@ -142,15 +233,13 @@ class CameraFile(object):
         :param ftype:       Select 'view' on file.
         :type ftype:        str
         """
-        if ftype not in backend.FILE_TYPES:
-            raise ValueError("`ftype` must be one of {0}"
-                             .format(backend.FILE_TYPES.keys()))
+        self._check_type_supported(ftype)
         camfile_p = ffi.new("CameraFile**")
         with open(target_path, 'wb') as fp:
             lib.gp_file_new_from_fd(camfile_p, fp.fileno())
-            lib.gp_camera_file_get(self._cam, self.directory, self.name,
-                                   backend.FILE_TYPES[ftype], camfile_p[0],
-                                   self._ctx)
+            lib.gp_camera_file_get(self._cam, bytes(self.directory.path),
+                                   self.name, backend.FILE_TYPES[ftype],
+                                   camfile_p[0], self._ctx)
 
     def get_data(self, ftype='normal'):
         """ Get file content as a bytestring.
@@ -160,14 +249,12 @@ class CameraFile(object):
         :return:            File content
         :rtype:             bytes
         """
-        if ftype not in backend.FILE_TYPES:
-            raise ValueError("`ftype` must be one of {0}"
-                             .format(backend.FILE_TYPES.keys()))
+        self._check_type_supported(ftype)
         camfile_p = ffi.new("CameraFile**")
         lib.gp_file_new(camfile_p)
-        lib.gp_camera_file_get(self._cam, self.directory, self.name,
-                               backend.FILE_TYPES[ftype], camfile_p[0],
-                               self._ctx)
+        lib.gp_camera_file_get(self._cam, bytes(self.directory.path),
+                               self.name, backend.FILE_TYPES[ftype],
+                               camfile_p[0], self._ctx)
         data_p = ffi.new("char**")
         length_p = ffi.new("unsigned long*")
         lib.gp_file_get_data_and_size(camfile_p[0], data_p, length_p)
@@ -182,35 +269,52 @@ class CameraFile(object):
         :type chunk_size:   int
         :return:            Iterator
         """
-        if ftype not in backend.FILE_TYPES:
-            raise ValueError("`ftype` must be one of {0}"
-                             .format(backend.FILE_TYPES.keys()))
-        camfile_p = ffi.new("CameraFile**")
+        self._check_type_supported(ftype)
         buf_p = ffi.new("char[{0}]".format(chunk_size))
         size_p = ffi.new("uint64_t*")
         offset_p = ffi.new("uint64_t*")
         for chunk_idx in xrange(math.ceil(self.size/chunk_size)):
             size_p[0] = chunk_size
             lib.gp_camera_file_read(
-                self._cam, self.directory, self.name,
+                self._cam, bytes(self.directory.path), self.name,
                 backend.FILE_TYPES[ftype], offset_p[0],
                 buf_p, size_p, self._ctx)
             yield ffi.buffer(buf_p, size_p[0])[:]
 
+    @_needs_op(FileOperations.remove)
     def remove(self):
         """ Remove file from device. """
-        lib.gp_camera_file_delete(self._cam, self.directory, self.name,
-                                  self._ctx)
+        lib.gp_camera_file_delete(self._cam, bytes(self.directory.path),
+                                  self.name, self._ctx)
+
+    def _check_type_supported(self, ftype):
+        if ftype not in backend.FILE_TYPES:
+            raise ValueError("`ftype` must be one of {0}"
+                             .format(backend.FILE_TYPES.keys()))
+        valid_ops = self.supported_operations
+        fops = FileOperations
+        op_is_unsupported = (
+            (ftype == 'exif' and fops.extract_exif not in valid_ops) or
+            (ftype == 'preview' and fops.extract_preview not in valid_ops) or
+            (ftype == 'raw' and fops.extract_raw not in valid_ops) or
+            (ftype == 'audio' and fops.extract_audio not in valid_ops))
+        if op_is_unsupported:
+            raise RuntimeError("Operation is not supported for this type.")
 
     def _update_info(self):
         info = ffi.new("CameraFileInfo*")
-        lib.gp_camera_file_get_info(self._cam, self.directory, self.name,
-                                    info, self._ctx)
+        lib.gp_camera_file_get_info(self._cam, bytes(self.directory.path),
+                                    self.name, info, self._ctx)
         self._info = info
 
+    def __eq__(self, other):
+        return (self.name == other.name and
+                self.directory == other.directory and
+                self._cam == other._cam)
+
     def __repr__(self):
-        return "CameraFile(\"{0}/{1}\")".format(self.directory.rstrip("/"),
-                                                self.name)
+        return "File(\"{0}/{1}\")".format(self.directory.path.rstrip("/"),
+                                          self.name)
 
 
 class ConfigItem(object):
@@ -367,9 +471,11 @@ class Camera(object):
 
     @property
     @_needs_initialized
-    def files(self):
-        """ List of files on the camera's permanent storage. """
-        return self._recurse_files(b"/")
+    def filesystem(self):
+        """ The camera's root directory. """
+        return Directory("/", None, self._abilities.file_operations,
+                         self._abilities.folder_operations, self._cam,
+                         self._ctx)
 
     @_needs_initialized
     def upload_file(self, source_path, target_path, ftype='normal'):
@@ -384,6 +490,31 @@ class Camera(object):
             lib.gp_camera_folder_put_file(
                 self._cam, target_dirname, target_fname,
                 backend.FILE_TYPES[ftype], camerafile_p[0], self._ctx)
+    def list_all_files(self):
+        """ Utility method that yields all files on the device's file
+            systems.
+        """
+        def list_files_recursively(directory):
+            f_gen = itertools.chain(
+                directory.files,
+                *(list_files_recursively(d) for d in directory.directories))
+            for f in f_gen:
+                yield f
+        return list_files_recursively(self.filesystem)
+
+    def list_all_directories(self):
+        """ Utility method that yields all directories on the device's file
+            systems.
+        """
+        def list_dirs_recursively(directory):
+            if directory == self.filesystem:
+                yield directory
+            d_gen = itertools.chain(
+                directory.directories,
+                *(list_dirs_recursively(d) for d in directory.directories))
+            for d in d_gen:
+                yield d
+        return list_dirs_recursively(self.filesystem)
 
     @_needs_initialized
     @_needs_op(CameraOperations.trigger_capture)
@@ -392,9 +523,9 @@ class Camera(object):
 
         :param to_camera_storage:   Save image to the camera's internal storage
         :type to_camera_storage:    bool
-        :return:    A :py:class:`CameraFile` if `to_camera_storage` was `True`,
+        :return:    A :py:class:`File` if `to_camera_storage` was `True`,
                     otherwise the captured image as a bytestring.
-        :rtype:     :py:class:`CameraFile` or bytes
+        :rtype:     :py:class:`File` or bytes
         """
         target = self.config['settings']['capturetarget']
         if to_camera_storage and target.value != "Memory card":
@@ -408,18 +539,17 @@ class Camera(object):
         event_data_p = ffi.new("void**", ffi.NULL)
         while True:
             lib.gp_camera_wait_for_event(self._cam, 1000, event_type,
-                                            event_data_p, self._ctx)
+                                         event_data_p, self._ctx)
             if event_type[0] == lib.GP_EVENT_CAPTURE_COMPLETE:
                 self._logger.info("Capture completed.")
             if event_type[0] == lib.GP_EVENT_FILE_ADDED:
                 break
         camfile_p = ffi.cast("CameraFilePath*", event_data_p[0])
-        fobj = CameraFile(ffi.string(camfile_p[0].name),
-                          ffi.string(camfile_p[0].folder),
-                          self._cam, self._ctx)
+        fobj = File(ffi.string(camfile_p[0].name),
+                    ffi.string(camfile_p[0].folder),
+                    self._abilities.file_operations, self._cam, self._ctx)
         if to_camera_storage:
-            self._logger.info("File written to storage at {0}."
-                                .format(fobj))
+            self._logger.info("File written to storage at {0}.".format(fobj))
             return fobj
         else:
             data = fobj.get_data()
@@ -475,37 +605,6 @@ class Camera(object):
                 itm = ConfigItem(child_p[0], self._cam, self._ctx)
                 out[key] = itm
         return out
-
-    def _recurse_files(self, path):
-        # Skip files in internal RAM
-        files = [] if path == "/" else self._list_files(path)
-        for subdir in self._list_directories(path):
-            files.extend(self._recurse_files(
-                b"{0}/{1}".format(path.rstrip("/"), subdir)))
-        return files
-
-    def _list_directories(self, path):
-        out = []
-        dirlist_p = new_gp_object("CameraList")
-        lib.gp_camera_folder_list_folders(self._cam, path, dirlist_p,
-                                          self._ctx)
-        for idx in xrange(lib.gp_list_count(dirlist_p)):
-            out.append(get_string(lib.gp_list_get_name, dirlist_p, idx))
-        lib.gp_list_free(dirlist_p)
-        return out
-
-    def _list_files(self, path):
-        files = []
-        filelist_p = new_gp_object("CameraList")
-        lib.gp_camera_folder_list_files(self._cam, path, filelist_p,
-                                        self._ctx)
-        for idx in xrange(lib.gp_list_count(filelist_p)):
-            name = ffi.new("const char**")
-            lib.gp_list_get_name(filelist_p, idx, name)
-            files.append(CameraFile(ffi.string(name[0]), path, self._cam,
-                                    self._ctx))
-        lib.gp_list_free(filelist_p)
-        return files
 
     def __del__(self):
         if self._initialized:
