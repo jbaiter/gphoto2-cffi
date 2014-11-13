@@ -667,7 +667,8 @@ def list_cameras():
             abilities_list_p, name)
         lib.gp_abilities_list_get_abilities(abilities_list_p, ability_idx,
                                             abilities)
-        out.append(Camera(bus_no, device_no, abilities))
+        if abilities.device_type == lib.GP_DEVICE_STILL_CAMERA:
+            out.append(Camera(bus_no, device_no, abilities))
     lib.gp_list_free(camlist_p)
     lib.gp_port_info_list_free(port_list_p)
     lib.gp_abilities_list_free(abilities_list_p)
