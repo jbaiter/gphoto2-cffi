@@ -9,13 +9,13 @@ from collections import namedtuple
 from datetime import datetime
 
 from . import backend
-from . backend import ffi, lib, get_string, get_ctype, new_gp_object
+from .backend import ffi, lib, get_string, get_ctype, new_gp_object
 
 Range = namedtuple("Range", ('min', 'max', 'step'))
 ImageDimensions = namedtuple("ImageDimensions", ('width', 'height'))
-UsbDevice = namedtuple("UsbDevice", ('name', 'bus_no', 'device_no'))
 
 _global_ctx = lib.gp_context_new()
+
 
 def _infoproperty(prop_func):
     """ Decorator that creates a property method that checks for the presence
@@ -28,9 +28,22 @@ def _infoproperty(prop_func):
                 self._update_info()
             except backend.GPhoto2Error:
                 raise ValueError("Could not get file info, are you sure "
-                                    "the file exists on the device?")
+                                 "the file exists on the device?")
         return prop_func(self, *args, **kwargs)
     return property(fget=decorated, doc=prop_func.__doc__)
+
+
+def _needs_initialized(func):
+    """ Decorator that checks if the :py:class:`Camera` is already initialized
+        and does so, if not.
+    """
+    @functools.wraps(func)
+    def decorated(self, *args, **kwargs):
+        if not self._initialized:
+            self._initialize()
+        return func(self, *args, **kwargs)
+    return decorated
+
 
 
 class CameraFile(object):
@@ -281,14 +294,14 @@ class ConfigItem(object):
 
 
 class Camera(object):
-    def __init__(self, bus=None, device=None):
+    def __init__(self, bus=None, device=None, _abilities=None):
         """ A camera device.
 
         The specific device can be auto-detected or set manually by
         specifying the USB bus and device number.
 
         :param bus:     USB bus number
-        :param device: USB device number
+        :param device:  USB device number
         """
         self._logger = logging.getLogger()
 
@@ -296,25 +309,15 @@ class Camera(object):
         #       device, however it is significantly (>500ms) faster when
         #       actions are to be performed simultaneously.
         self._ctx = lib.gp_context_new()
-
-        self._cam = new_gp_object("Camera")
-        if (bus, device) != (None, None):
-            port_name = b"usb:{0:03},{1:03}".format(bus, device)
-            port_list_p = new_gp_object("GPPortInfoList")
-            lib.gp_port_info_list_load(port_list_p)
-            port_info_p = ffi.new("GPPortInfo*")
-            lib.gp_port_info_new(port_info_p)
-            port_num = lib.gp_port_info_list_lookup_path(
-                port_list_p, port_name)
-            lib.gp_port_info_list_get_info(port_list_p, port_num,
-                                           port_info_p)
-            lib.gp_camera_set_port_info(self._cam, port_info_p[0])
-        lib.gp_camera_init(self._cam, self._ctx)
+        self._initialized = False
+        self._usb_address = (bus, device)
+        self._abilities = _abilities
 
     def __del__(self):
         lib.gp_camera_free(self._cam)
 
     @property
+    @_needs_initialized
     def config(self):
         """ Configuration for the camera.
 
@@ -325,10 +328,12 @@ class Camera(object):
         return self._widget_to_dict(root_widget[0])
 
     @property
+    @_needs_initialized
     def files(self):
         """ List of files on the camera's permanent storage. """
         return self._recurse_files(b"/")
 
+    @_needs_initialized
     def upload_file(self, source_path, target_path, ftype='normal'):
         if ftype not in backend.FILE_TYPES:
             raise ValueError("`ftype` must be one of {0}"
@@ -342,6 +347,7 @@ class Camera(object):
                 self._cam, target_dirname, target_fname,
                 backend.FILE_TYPES[ftype], camerafile_p[0], self._ctx)
 
+    @_needs_initialized
     def capture(self, to_camera_storage=False):
         """ Capture an image.
 
@@ -381,6 +387,7 @@ class Camera(object):
             fobj.remove()
             return data
 
+    @_needs_initialized
     def get_preview(self):
         """ Get a preview from the camera's viewport.
 
@@ -394,6 +401,25 @@ class Camera(object):
         length_p = ffi.new("unsigned long*")
         lib.gp_file_get_data_and_size(camfile_p[0], data_p, length_p)
         return ffi.buffer(data_p[0], length_p[0])[:]
+
+    def _initialize(self):
+        self._cam = new_gp_object("Camera")
+        if self._usb_address != (None, None):
+            port_name = b"usb:{0:03},{1:03}".format(*self._usb_address)
+            port_list_p = new_gp_object("GPPortInfoList")
+            lib.gp_port_info_list_load(port_list_p)
+            port_info_p = ffi.new("GPPortInfo*")
+            lib.gp_port_info_new(port_info_p)
+            port_num = lib.gp_port_info_list_lookup_path(
+                port_list_p, port_name)
+            lib.gp_port_info_list_get_info(port_list_p, port_num,
+                                           port_info_p)
+            lib.gp_camera_set_port_info(self._cam, port_info_p[0])
+        lib.gp_camera_init(self._cam, self._ctx)
+        if self._abilities is None:
+            self._abilities = ffi.new("CameraAbilities*")
+            lib.gp_camera_get_abilities(self._cam, self._abilities)
+        self._initialized = True
 
     def _widget_to_dict(self, cwidget):
         out = {}
@@ -461,7 +487,12 @@ def list_cameras():
         value = get_string(lib.gp_list_get_value, camlist_p, idx)
         bus_no, device_no = (int(x) for x in
                              re.match(r"usb:(\d+),(\d+)", value).groups())
-        out.append(UsbDevice(name, bus_no, device_no))
+        abilities = ffi.new("CameraAbilities*")
+        ability_idx = lib.gp_abilities_list_lookup_model(
+            abilities_list_p, name)
+        lib.gp_abilities_list_get_abilities(abilities_list_p, ability_idx,
+                                            abilities)
+        out.append(Camera(bus_no, device_no, abilities))
     lib.gp_list_free(camlist_p)
     lib.gp_port_info_list_free(port_list_p)
     lib.gp_abilities_list_free(abilities_list_p)
