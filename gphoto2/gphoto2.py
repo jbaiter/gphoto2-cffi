@@ -16,6 +16,10 @@ from .backend import ffi, lib, get_string, get_ctype, new_gp_object
 
 Range = namedtuple("Range", ('min', 'max', 'step'))
 ImageDimensions = namedtuple("ImageDimensions", ('width', 'height'))
+StorageInformation = namedtuple(
+    "StorageInformation",
+    ('label', 'directory', 'description', 'type', 'accesstype',
+     'total_space', 'free_space', 'remaining_images'))
 FileOperations = IntEnum(b'FileOperations', {
     'remove': lib.GP_FILE_OPERATION_DELETE,
     'extract_preview': lib.GP_FILE_OPERATION_PREVIEW,
@@ -477,19 +481,47 @@ class Camera(object):
                          self._abilities.folder_operations, self._cam,
                          self._ctx)
 
+    @property
     @_needs_initialized
-    def upload_file(self, source_path, target_path, ftype='normal'):
-        if ftype not in backend.FILE_TYPES:
-            raise ValueError("`ftype` must be one of {0}"
-                             .format(backend.FILE_TYPES.keys()))
-        target_dirname, target_fname = (os.path.dirname(target_path),
-                                        os.path.basename(target_path))
-        camerafile_p = ffi.new("CameraFile**")
-        with open(source_path, 'rb') as fp:
-            lib.gp_file_new_from_fd(camerafile_p, fp.fileno())
-            lib.gp_camera_folder_put_file(
-                self._cam, target_dirname, target_fname,
-                backend.FILE_TYPES[ftype], camerafile_p[0], self._ctx)
+    def storage_info(self):
+        """ Information about the camera's storage. """
+        info_p = ffi.new("CameraStorageInformation**")
+        num_info_p = ffi.new("int*")
+        lib.gp_camera_get_storageinfo(self._cam, info_p, num_info_p, self._ctx)
+        infos = []
+        for idx in xrange(num_info_p[0]):
+            out = {}
+            struc = (info_p[0] + idx)
+            fields = struc.fields
+            if lib.GP_STORAGEINFO_BASE & fields:
+                out['directory'] = next(
+                    (d for d in self.list_all_directories()
+                     if d.path == ffi.string(struc.basedir)), None)
+            if lib.GP_STORAGEINFO_LABEL & fields:
+                out['label'] = ffi.string(struc.label)
+            if lib.GP_STORAGEINFO_DESCRIPTION & fields:
+                out['description'] = ffi.string(struc.description)
+            if lib.GP_STORAGEINFO_STORAGETYPE & fields:
+                stype = struc.type
+                if lib.GP_STORAGEINFO_ST_FIXED_ROM & stype:
+                    out['type'] = 'fixed_rom'
+                elif lib.GP_STORAGEINFO_ST_REMOVABLE_ROM & stype:
+                    out['type'] = 'removable_rom'
+                elif lib.GP_STORAGEINFO_ST_FIXED_RAM & stype:
+                    out['type'] = 'fixed_ram'
+                elif lib.GP_STORAGEINFO_ST_REMOVABLE_RAM & stype:
+                    out['type'] = 'removable_ram'
+                else:
+                    out['type'] = 'unknown'
+            if lib.GP_STORAGEINFO_MAXCAPACITY & fields:
+                out['capacity'] = struc.capacitykbytes
+            if lib.GP_STORAGEINFO_FREESPACEKBYTES & fields:
+                out['free_space'] = struc.freekbytes
+            if lib.GP_STORAGEINFO_FREESPACEIMAGES & fields:
+                out['remaining_images'] = struc.freeimages
+            infos.append(out)
+        return infos
+
     def list_all_files(self):
         """ Utility method that yields all files on the device's file
             systems.
