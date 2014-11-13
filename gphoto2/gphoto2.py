@@ -336,13 +336,13 @@ class ConfigItem(object):
                     is `range`.
     :attr readonly: Whether the value can be written to or not
     """
-    def __init__(self, widget, cam, ctx):
+    def __init__(self, widget, camera, context):
         self._widget = widget
         root_p = ffi.new("CameraWidget**")
         lib.gp_widget_get_root(self._widget, root_p)
         self._root = root_p[0]
-        self._cam = cam
-        self._ctx = ctx
+        self._cam = camera
+        self._ctx = context
         self.name = get_string(lib.gp_widget_get_name, widget)
         typenum = get_ctype("CameraWidgetType*", lib.gp_widget_get_type,
                             widget)
@@ -395,7 +395,7 @@ class ConfigItem(object):
             if value < self.range.min or value > self.range.max:
                 raise ValueError("Value exceeds valid range ({0}-{1}."
                                  .format(self.range.min, self.range.max))
-            if value%self.range.step:
+            if value % self.range.step:
                 raise ValueError("Value can only be changed in steps of {0}."
                                  .format(self.range.step))
             val_p = ffi.new("float*")
@@ -429,7 +429,7 @@ class ConfigItem(object):
         return Range(rmin, rmax, rinc)
 
     def __repr__(self):
-        return ("ConfigItem('{0}', {1}, ,{2}, 'r{3}')"
+        return ("ConfigItem('{0}', {1}, {2}, r{3})"
                 .format(self.label, self.type, repr(self.value),
                         "o" if self.readonly else "w"))
 
@@ -553,6 +553,12 @@ class Camera(object):
     def capture(self, to_camera_storage=False):
         """ Capture an image.
 
+        Some cameras (mostly Canon and Nikon) support capturing to internal
+        RAM. On these devices, you have to specify `to_camera_storage` if
+        you want to save the images to the memory card. On devices that
+        do not support saving to RAM, the only difference is that the file
+        is automatically downloaded and deleted when set to `False`.
+
         :param to_camera_storage:   Save image to the camera's internal storage
         :type to_camera_storage:    bool
         :return:    A :py:class:`File` if `to_camera_storage` was `True`,
@@ -592,6 +598,9 @@ class Camera(object):
     @_needs_op(CameraOperations.capture_preview)
     def get_preview(self):
         """ Get a preview from the camera's viewport.
+
+        This will usually be a JPEG image with the dimensions depending on
+        the camera.
 
         :return:    The preview image as a bytestring
         :rtype:     bytes
