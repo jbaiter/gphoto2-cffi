@@ -11,7 +11,7 @@ from datetime import datetime
 
 from enum import IntEnum
 
-from . import backend
+from . import backend, errors
 from .backend import ffi, lib, get_string, get_ctype, new_gp_object
 
 Range = namedtuple("Range", ('min', 'max', 'step'))
@@ -53,7 +53,7 @@ def _infoproperty(prop_func):
         if self._info is None:
             try:
                 self._update_info()
-            except backend.GPhoto2Error:
+            except errors.GPhoto2Error:
                 raise ValueError("Could not get file info, are you sure "
                                  "the file exists on the device?")
         return prop_func(self, *args, **kwargs)

@@ -2,11 +2,27 @@ import logging
 
 from cffi import FFI
 
+from . import errors
+
 ffi = FFI()
 ffi.cdef("""
 /* ======= Needed by all ======= */
 typedef ... Camera;
 typedef ... CameraFile;
+
+/* ======= Errors ======== */
+#define GP_ERROR_CORRUPTED_DATA ...
+#define GP_ERROR_FILE_EXISTS ...
+#define GP_ERROR_MODEL_NOT_FOUND ...
+#define GP_ERROR_DIRECTORY_NOT_FOUND ...
+#define GP_ERROR_FILE_NOT_FOUND ...
+#define GP_ERROR_DIRECTORY_EXISTS ...
+#define GP_ERROR_CAMERA_BUSY ...
+#define GP_ERROR_PATH_NOT_ABSOLUTE ...
+#define GP_ERROR_CANCEL ...
+#define GP_ERROR_CAMERA_ERROR ...
+#define GP_ERROR_OS_FAILURE ...
+#define GP_ERROR_NO_SPACE ...
 
 /* ====== Context ====== */
 typedef long time_t; // Dangerous, might not be portable
@@ -456,23 +472,12 @@ def logging_callback(level, domain, message, data):
 _lib.gp_log_add_func(_lib.GP_LOG_DEBUG, logging_callback, ffi.NULL)
 
 
-class GPhoto2Error(Exception):
-    def __init__(self, errcode):
-        """ Generic exception type for all errors that originate in libgphoto2.
-
-        Converts libgphoto2 error codes to their human readable message.
-
-        :param errcode:     The libgphoto2 error code
-        """
-        self.error_code = errcode
-        msg = ffi.string(lib.gp_result_as_string(errcode))
-        super(GPhoto2Error, self).__init__(msg)
-
-
 def check_error(rval):
     """ Check a return value for a libgphoto2 error. """
-    if rval != 0:
-        raise GPhoto2Error(rval)
+    if rval < 0:
+        raise errors.error_from_code(rval)
+    else:
+        return rval
 
 
 class LibraryWrapper(object):
@@ -480,13 +485,7 @@ class LibraryWrapper(object):
         "gp_log_add_func",
         "gp_context_new",
         "gp_list_count",
-        "gp_widget_count_choices",
-        "gp_widget_count_children",
         "gp_result_as_string",
-        # These are a bit nasty, since their return value can be both an index
-        # *or* an error code...
-        "gp_port_info_list_lookup_path",
-        "gp_abilities_list_lookup_model"
     )
 
     def __init__(self, to_wrap):
@@ -494,7 +493,7 @@ class LibraryWrapper(object):
 
         Wraps functions inside an anonymous function that checks the inner
         function's return code for libgphoto2 errors and throws a
-        :py:class:`GPhoto2Error` if needed.
+        :py:class:`gphoto2.errors.GPhoto2Error` if needed.
 
         :param to_wrap:     FFI library to wrap
         """
