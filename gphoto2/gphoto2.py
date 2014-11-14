@@ -279,7 +279,7 @@ class File(object):
         buf_p = ffi.new("char[{0}]".format(chunk_size))
         size_p = ffi.new("uint64_t*")
         offset_p = ffi.new("uint64_t*")
-        for chunk_idx in xrange(math.ceil(self.size/chunk_size)):
+        for chunk_idx in xrange(int(math.ceil(self.size/chunk_size))):
             size_p[0] = chunk_size
             lib.gp_camera_file_read(
                 self._cam, bytes(self.directory.path), self.name,
