@@ -688,6 +688,10 @@ class Camera(object):
                 out[key] = itm
         return out
 
+    def __repr__(self):
+        return "<Camera \"{0}\" at usb:{1:03}:{2:03}>".format(
+            self.model_name, *self._usb_address)
+
     def __del__(self):
         if self._initialized:
             lib.gp_camera_free(self._cam)
