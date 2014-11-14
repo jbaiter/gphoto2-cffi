@@ -567,7 +567,7 @@ class Camera(object):
         return list_dirs_recursively(self.filesystem)
 
     @_needs_initialized
-    @_needs_op(CameraOperations.trigger_capture)
+    @_needs_op(CameraOperations.capture_image)
     def capture(self, to_camera_storage=False):
         """ Capture an image.
 
@@ -602,7 +602,8 @@ class Camera(object):
                 break
         camfile_p = ffi.cast("CameraFilePath*", event_data_p[0])
         fobj = File(ffi.string(camfile_p[0].name),
-                    ffi.string(camfile_p[0].folder),
+                    next(f for f in self.list_all_directories()
+                         if f.path == ffi.string(camfile_p[0].folder)),
                     self._abilities.file_operations, self._cam, self._ctx)
         if to_camera_storage:
             self._logger.info("File written to storage at {0}.".format(fobj))
