@@ -158,7 +158,8 @@ class Directory(object):
         with open(local_path, 'rb') as fp:
             lib.gp_file_new_from_fd(camerafile_p, fp.fileno())
             lib.gp_camera_folder_put_file(
-                self._cam, self.path, os.path.basename(local_path),
+                self._cam, bytes(self.path) + b"/",
+                bytes(os.path.basename(local_path)),
                 backend.FILE_TYPES['normal'], camerafile_p[0], self._ctx)
 
     def __eq__(self, other):
