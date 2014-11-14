@@ -73,6 +73,9 @@ def _needs_initialized(func):
 
 
 def _needs_op(op):
+    """ Decorator that checks the `supported_operations` for the specified
+        operation and throws a RuntimeException if it is unsupported.
+    """
     # TODO: Is this really needed? Check if the library responds with sensible
     # error messages on unsupported operations?
     def decorator(func):
@@ -86,6 +89,7 @@ def _needs_op(op):
 
 
 class Directory(object):
+    """ A directory on the camera. """
     def __init__(self, name, parent, file_ops, dir_ops, camera, context):
         self.name = name
         self.parent = parent
