@@ -534,6 +534,13 @@ class Camera(object):
                     out['type'] = 'removable_ram'
                 else:
                     out['type'] = 'unknown'
+            if lib.GP_STORAGEINFO_ACCESS & fields:
+                if lib.GP_STORAGEINFO_AC_READWRITE & struc.access:
+                    out['access'] = 'read-write'
+                elif lib.GP_STORAGEINFO_AC_READONLY & struc.access:
+                    out['access'] = 'read-only'
+                elif lib.GP_STORAGEINFO_AC_READONLY_WITH_DELETE & struc.access:
+                    out['access'] = 'read-delete'
             if lib.GP_STORAGEINFO_MAXCAPACITY & fields:
                 out['capacity'] = struc.capacitykbytes
             if lib.GP_STORAGEINFO_FREESPACEKBYTES & fields:
