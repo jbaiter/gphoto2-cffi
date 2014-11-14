@@ -437,7 +437,7 @@ class ConfigItem(object):
 
 
 class Camera(object):
-    def __init__(self, bus=None, device=None, _abilities=None):
+    def __init__(self, bus=None, device=None, lazy=False, _abilities=None):
         """ A camera device.
 
         The specific device can be auto-detected or set manually by
@@ -445,6 +445,7 @@ class Camera(object):
 
         :param bus:     USB bus number
         :param device:  USB device number
+        :param lazy:    Only initialize the device when needed
         """
         self._logger = logging.getLogger()
 
@@ -455,6 +456,8 @@ class Camera(object):
         self._initialized = False
         self._usb_address = (bus, device)
         self._abilities = _abilities
+        if not lazy:
+            self._initialize()
 
     @property
     def supported_operations(self):
@@ -645,7 +648,14 @@ class Camera(object):
             lib.gp_port_info_list_get_info(port_list_p, port_num,
                                            port_info_p)
             lib.gp_camera_set_port_info(self._cam, port_info_p[0])
-        lib.gp_camera_init(self._cam, self._ctx)
+            lib.gp_camera_init(self._cam, self._ctx)
+        else:
+            try:
+                lib.gp_camera_init(self._cam, self._ctx)
+            except errors.UnsupportedDevice as e:
+                raise errors.UnsupportedDevice(
+                    e.error_code, "Could not find any supported devices.")
+
         if self._abilities is None:
             self._abilities = ffi.new("CameraAbilities*")
             lib.gp_camera_get_abilities(self._cam, self._abilities)
@@ -696,7 +706,8 @@ def list_cameras():
         lib.gp_abilities_list_get_abilities(abilities_list_p, ability_idx,
                                             abilities)
         if abilities.device_type == lib.GP_DEVICE_STILL_CAMERA:
-            out.append(Camera(bus_no, device_no, abilities))
+            out.append(Camera(bus_no, device_no, lazy=True,
+                              _abilities=abilities))
     lib.gp_list_free(camlist_p)
     lib.gp_port_info_list_free(port_list_p)
     lib.gp_abilities_list_free(abilities_list_p)
