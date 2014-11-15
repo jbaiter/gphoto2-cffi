@@ -91,13 +91,12 @@ def _needs_op(op):
 
 class Directory(object):
     """ A directory on the camera. """
-    def __init__(self, name, parent, file_ops, dir_ops, camera, context):
+    def __init__(self, name, parent, camera):
         self.name = name
         self.parent = parent
-        self._file_ops = file_ops
-        self._dir_ops = dir_ops
+        self._file_ops = camera._abilities.file_operations
+        self._dir_ops = camera._abilities.folder_operations
         self._cam = camera
-        self._ctx = context
 
     @property
     def path(self):
@@ -121,36 +120,33 @@ class Directory(object):
     @property
     def files(self):
         filelist_p = new_gp_object("CameraList")
-        lib.gp_camera_folder_list_files(self._cam, bytes(self.path),
-                                        filelist_p, self._ctx)
+        lib.gp_camera_folder_list_files(self._cam._cam, bytes(self.path),
+                                        filelist_p, self._cam._ctx)
         for idx in xrange(lib.gp_list_count(filelist_p)):
-            yield File(
-                get_string(lib.gp_list_get_name, filelist_p, idx),
-                self, self._file_ops, self._cam, self._ctx)
+            yield File(name=get_string(lib.gp_list_get_name, filelist_p, idx),
+                       directory=self, camera=self._cam)
         lib.gp_list_free(filelist_p)
 
     @property
     def directories(self):
         dirlist_p = new_gp_object("CameraList")
-        lib.gp_camera_folder_list_folders(self._cam, bytes(self.path),
-                                          dirlist_p, self._ctx)
+        lib.gp_camera_folder_list_folders(self._cam._cam, bytes(self.path),
+                                          dirlist_p, self._cam._ctx)
         for idx in xrange(lib.gp_list_count(dirlist_p)):
-            yield Directory(
-                os.path.join(self.path,
-                             get_string(lib.gp_list_get_name, dirlist_p, idx)),
-                parent=self, dir_ops=self._dir_ops, file_ops=self._file_ops,
-                camera=self._cam, context=self._ctx)
+            name = os.path.join(self.path, get_string(
+                lib.gp_list_get_name, dirlist_p, idx))
+            yield Directory(name=name, parent=self, camera=self._cam)
         lib.gp_list_free(dirlist_p)
 
     @_needs_op(DirectoryOperations.create)
     def create(self):
-        lib.gp_camera_folder_make_dir(self._cam, self.parent.path, self.name,
-                                      self._ctx)
+        lib.gp_camera_folder_make_dir(self._cam._cam, self.parent.path,
+                                      self.name, self._cam._ctx)
 
     @_needs_op(DirectoryOperations.remove)
     def remove(self, recurse=False):
-        lib.gp_camera_folder_remove_dir(self._cam, self.parent.path, self.name,
-                                        self._ctx)
+        lib.gp_camera_folder_remove_dir(self._cam._cam, self.parent.path,
+                                        self.name, self._cam._ctx)
 
     @_needs_op(DirectoryOperations.upload)
     def upload(self, local_path):
@@ -163,9 +159,9 @@ class Directory(object):
         with open(local_path, 'rb') as fp:
             lib.gp_file_new_from_fd(camerafile_p, fp.fileno())
             lib.gp_camera_folder_put_file(
-                self._cam, bytes(self.path) + b"/",
+                self._cam._cam, bytes(self.path) + b"/",
                 bytes(os.path.basename(local_path)),
-                backend.FILE_TYPES['normal'], camerafile_p[0], self._ctx)
+                backend.FILE_TYPES['normal'], camerafile_p[0], self.__cam.ctx)
 
     def __eq__(self, other):
         return (self.name == other.name and
@@ -178,12 +174,11 @@ class Directory(object):
 
 class File(object):
     """ A file on the camera. """
-    def __init__(self, name, directory, operations, camera, context):
+    def __init__(self, name, directory, camera):
         self.name = name
         self.directory = directory
         self._cam = camera
-        self._ctx = context
-        self._operations = operations
+        self._operations = camera._abilities.file_operations
         self._info = None
 
     @property
@@ -249,9 +244,9 @@ class File(object):
         camfile_p = ffi.new("CameraFile**")
         with open(target_path, 'wb') as fp:
             lib.gp_file_new_from_fd(camfile_p, fp.fileno())
-            lib.gp_camera_file_get(self._cam, bytes(self.directory.path),
+            lib.gp_camera_file_get(self._cam._cam, bytes(self.directory.path),
                                    self.name, backend.FILE_TYPES[ftype],
-                                   camfile_p[0], self._ctx)
+                                   camfile_p[0], self._cam._ctx)
 
     def get_data(self, ftype='normal'):
         """ Get file content as a bytestring.
@@ -264,9 +259,9 @@ class File(object):
         self._check_type_supported(ftype)
         camfile_p = ffi.new("CameraFile**")
         lib.gp_file_new(camfile_p)
-        lib.gp_camera_file_get(self._cam, bytes(self.directory.path),
+        lib.gp_camera_file_get(self._cam._cam, bytes(self.directory.path),
                                self.name, backend.FILE_TYPES[ftype],
-                               camfile_p[0], self._ctx)
+                               camfile_p[0], self._cam._ctx)
         data_p = ffi.new("char**")
         length_p = ffi.new("unsigned long*")
         lib.gp_file_get_data_and_size(camfile_p[0], data_p, length_p)
@@ -288,16 +283,16 @@ class File(object):
         for chunk_idx in xrange(int(math.ceil(self.size/chunk_size))):
             size_p[0] = chunk_size
             lib.gp_camera_file_read(
-                self._cam, bytes(self.directory.path), self.name,
+                self._cam._cam, bytes(self.directory.path), self.name,
                 backend.FILE_TYPES[ftype], offset_p[0],
-                buf_p, size_p, self._ctx)
+                buf_p, size_p, self._cam._ctx)
             yield ffi.buffer(buf_p, size_p[0])[:]
 
     @_needs_op(FileOperations.remove)
     def remove(self):
         """ Remove file from device. """
-        lib.gp_camera_file_delete(self._cam, bytes(self.directory.path),
-                                  self.name, self._ctx)
+        lib.gp_camera_file_delete(self._cam._cam, bytes(self.directory.path),
+                                  self.name, self._cam._ctx)
 
     def _check_type_supported(self, ftype):
         if ftype not in backend.FILE_TYPES:
@@ -315,8 +310,8 @@ class File(object):
 
     def _update_info(self):
         info = ffi.new("CameraFileInfo*")
-        lib.gp_camera_file_get_info(self._cam, bytes(self.directory.path),
-                                    self.name, info, self._ctx)
+        lib.gp_camera_file_get_info(self._cam._cam, bytes(self.directory.path),
+                                    self.name, info, self._cam._ctx)
         self._info = info
 
     def __eq__(self, other):
@@ -344,13 +339,12 @@ class ConfigItem(object):
                     is `range`.
     :attr readonly: Whether the value can be written to or not
     """
-    def __init__(self, widget, camera, context):
+    def __init__(self, widget, camera):
         self._widget = widget
         root_p = ffi.new("CameraWidget**")
         lib.gp_widget_get_root(self._widget, root_p)
         self._root = root_p[0]
         self._cam = camera
-        self._ctx = context
         self.name = get_string(lib.gp_widget_get_name, widget)
         typenum = get_ctype("CameraWidgetType*", lib.gp_widget_get_type,
                             widget)
@@ -417,7 +411,7 @@ class ConfigItem(object):
             val_p = ffi.new("int*")
             val_p[0] = value
         lib.gp_widget_set_value(self._widget, val_p)
-        lib.gp_camera_set_config(self._cam, self._root, self._ctx)
+        lib.gp_camera_set_config(self._cam._cam, self._root, self._cam._ctx)
 
     def _read_choices(self):
         if self.type != 'selection':
@@ -504,9 +498,7 @@ class Camera(object):
     @_needs_initialized
     def filesystem(self):
         """ The camera's root directory. """
-        return Directory("/", None, self._abilities.file_operations,
-                         self._abilities.folder_operations, self._cam,
-                         self._ctx)
+        return Directory(name="/", parent=None, camera=self)
 
     @property
     @_needs_initialized
@@ -606,21 +598,7 @@ class Camera(object):
             target.set("Internal RAM")
         lib.gp_camera_trigger_capture(self._cam, self._ctx)
 
-        # Wait for capture to finish
-        event_type = ffi.new("CameraEventType*")
-        event_data_p = ffi.new("void**", ffi.NULL)
-        while True:
-            lib.gp_camera_wait_for_event(self._cam, 1000, event_type,
-                                         event_data_p, self._ctx)
-            if event_type[0] == lib.GP_EVENT_CAPTURE_COMPLETE:
-                self._logger.info("Capture completed.")
-            if event_type[0] == lib.GP_EVENT_FILE_ADDED:
-                break
-        camfile_p = ffi.cast("CameraFilePath*", event_data_p[0])
-        fobj = File(ffi.string(camfile_p[0].name),
-                    next(f for f in self.list_all_directories()
-                         if f.path == ffi.string(camfile_p[0].folder)),
-                    self._abilities.file_operations, self._cam, self._ctx)
+        fobj = self._wait_for_event(lib.GP_EVENT_FILE_ADDED)
         if to_camera_storage:
             self._logger.info("File written to storage at {0}.".format(fobj))
             return fobj
@@ -674,6 +652,29 @@ class Camera(object):
             lib.gp_camera_get_abilities(self._cam, self._abilities)
         self._initialized = True
 
+    def _wait_for_event(self, event_type):
+        event_type_p = ffi.new("CameraEventType*")
+        event_data_p = ffi.new("void**", ffi.NULL)
+        while True:
+            try:
+                lib.gp_camera_wait_for_event(self._cam, 1000, event_type_p,
+                                             event_data_p, self._ctx)
+            except errors.GPhoto2Error as e:
+                self._logger.error(e)
+                continue
+            if event_type_p[0] == lib.GP_EVENT_CAPTURE_COMPLETE:
+                self._logger.info("Capture completed.")
+            if event_type_p[0] == lib.GP_EVENT_FILE_ADDED:
+                self._logger.info("File added.")
+            if event_type_p[0] == event_type:
+                break
+        if event_type == lib.GP_EVENT_FILE_ADDED:
+            camfile_p = ffi.cast("CameraFilePath*", event_data_p[0])
+            directory = next(f for f in self.list_all_directories()
+                             if f.path == ffi.string(camfile_p[0].folder))
+            return File(name=ffi.string(camfile_p[0].name),
+                        directory=directory, camera=self)
+
     def _widget_to_dict(self, cwidget):
         out = {}
         for idx in xrange(lib.gp_widget_count_children(cwidget)):
@@ -685,7 +686,7 @@ class Camera(object):
             if typenum in (lib.GP_WIDGET_WINDOW, lib.GP_WIDGET_SECTION):
                 out[key] = self._widget_to_dict(child_p[0])
             else:
-                itm = ConfigItem(child_p[0], self._cam, self._ctx)
+                itm = ConfigItem(child_p[0], self)
                 out[key] = itm
         return out
 
