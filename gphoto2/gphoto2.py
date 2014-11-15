@@ -13,6 +13,7 @@ from enum import IntEnum
 
 from . import backend, errors
 from .backend import ffi, lib, get_string, get_ctype, new_gp_object
+from .util import SimpleNamespace
 
 Range = namedtuple("Range", ('min', 'max', 'step'))
 ImageDimensions = namedtuple("ImageDimensions", ('width', 'height'))
@@ -516,42 +517,42 @@ class Camera(object):
         lib.gp_camera_get_storageinfo(self._cam, info_p, num_info_p, self._ctx)
         infos = []
         for idx in xrange(num_info_p[0]):
-            out = {}
+            out = SimpleNamespace()
             struc = (info_p[0] + idx)
             fields = struc.fields
             if lib.GP_STORAGEINFO_BASE & fields:
-                out['directory'] = next(
+                out.directory = next(
                     (d for d in self.list_all_directories()
                      if d.path == ffi.string(struc.basedir)), None)
             if lib.GP_STORAGEINFO_LABEL & fields:
-                out['label'] = ffi.string(struc.label)
+                out.label = ffi.string(struc.label)
             if lib.GP_STORAGEINFO_DESCRIPTION & fields:
-                out['description'] = ffi.string(struc.description)
+                out.description = ffi.string(struc.description)
             if lib.GP_STORAGEINFO_STORAGETYPE & fields:
                 stype = struc.type
                 if lib.GP_STORAGEINFO_ST_FIXED_ROM & stype:
-                    out['type'] = 'fixed_rom'
+                    out.type = 'fixed_rom'
                 elif lib.GP_STORAGEINFO_ST_REMOVABLE_ROM & stype:
-                    out['type'] = 'removable_rom'
+                    out.type = 'removable_rom'
                 elif lib.GP_STORAGEINFO_ST_FIXED_RAM & stype:
-                    out['type'] = 'fixed_ram'
+                    out.type = 'fixed_ram'
                 elif lib.GP_STORAGEINFO_ST_REMOVABLE_RAM & stype:
-                    out['type'] = 'removable_ram'
+                    out.type = 'removable_ram'
                 else:
-                    out['type'] = 'unknown'
+                    out.type = 'unknown'
             if lib.GP_STORAGEINFO_ACCESS & fields:
                 if lib.GP_STORAGEINFO_AC_READWRITE & struc.access:
-                    out['access'] = 'read-write'
+                    out.access = 'read-write'
                 elif lib.GP_STORAGEINFO_AC_READONLY & struc.access:
-                    out['access'] = 'read-only'
+                    out.access = 'read-only'
                 elif lib.GP_STORAGEINFO_AC_READONLY_WITH_DELETE & struc.access:
-                    out['access'] = 'read-delete'
+                    out.access = 'read-delete'
             if lib.GP_STORAGEINFO_MAXCAPACITY & fields:
-                out['capacity'] = struc.capacitykbytes
+                out.capacity = int(struc.capacitykbytes)
             if lib.GP_STORAGEINFO_FREESPACEKBYTES & fields:
-                out['free_space'] = struc.freekbytes
+                out.free_space = int(struc.freekbytes)
             if lib.GP_STORAGEINFO_FREESPACEIMAGES & fields:
-                out['remaining_images'] = struc.freeimages
+                out.remaining_images = int(struc.freeimages)
             infos.append(out)
         return infos
 
