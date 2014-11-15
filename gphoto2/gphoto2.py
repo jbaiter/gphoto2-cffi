@@ -364,7 +364,10 @@ class ConfigItem(object):
             self.range = self._read_range()
         elif self.type in ('toggle', 'date'):
             val = get_ctype("int*", value_fn, widget)
-            self.value = val if self.type == 'date' else bool(val)
+            if self.type == 'date':
+                self.value = val
+            else:
+                self.value = None if val == 2 else bool(val)
         else:
             raise ValueError("Unsupported widget type for ConfigItem: {0}"
                              .format(self.type))
@@ -410,7 +413,7 @@ class ConfigItem(object):
             if not isinstance(value, bool):
                 raise ValueError("Value must be bool.")
             val_p = ffi.new("int*")
-            val_p[0] = value
+            val_p[0] = int(value)
         elif self.type == 'date':
             val_p = ffi.new("int*")
             val_p[0] = value
