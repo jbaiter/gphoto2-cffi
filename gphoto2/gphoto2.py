@@ -82,7 +82,7 @@ def _needs_op(op):
     def decorator(func):
         @functools.wraps(func)
         def wrapped(self, *args, **kwargs):
-            if op not in self.supported_operations:
+            if self._op_check and op not in self.supported_operations:
                 raise RuntimeError("Device does not support this operation.")
             return func(self, *args, **kwargs)
         return wrapped
@@ -96,6 +96,7 @@ class Directory(object):
         self.parent = parent
         self._file_ops = camera._abilities.file_operations
         self._dir_ops = camera._abilities.folder_operations
+        self._op_check = camera._op_check
         self._cam = camera
 
     @property
@@ -179,6 +180,7 @@ class File(object):
         self.directory = directory
         self._cam = camera
         self._operations = camera._abilities.file_operations
+        self._op_check = camera._op_check
         self._info = None
 
     @property
@@ -240,7 +242,8 @@ class File(object):
         :param ftype:       Select 'view' on file.
         :type ftype:        str
         """
-        self._check_type_supported(ftype)
+        if self._op_check:
+            self._check_type_supported(ftype)
         camfile_p = ffi.new("CameraFile**")
         with open(target_path, 'wb') as fp:
             lib.gp_file_new_from_fd(camfile_p, fp.fileno())
@@ -256,7 +259,8 @@ class File(object):
         :return:            File content
         :rtype:             bytes
         """
-        self._check_type_supported(ftype)
+        if self._op_check:
+            self._check_type_supported(ftype)
         camfile_p = ffi.new("CameraFile**")
         lib.gp_file_new(camfile_p)
         lib.gp_camera_file_get(self._cam._cam, bytes(self.directory.path),
@@ -437,15 +441,19 @@ class ConfigItem(object):
 
 
 class Camera(object):
-    def __init__(self, bus=None, device=None, lazy=False, _abilities=None):
+    def __init__(self, bus=None, device=None, lazy=False, op_check=True,
+                 _abilities=None):
         """ A camera device.
 
         The specific device can be auto-detected or set manually by
         specifying the USB bus and device number.
 
-        :param bus:     USB bus number
-        :param device:  USB device number
-        :param lazy:    Only initialize the device when needed
+        :param bus:         USB bus number
+        :param device:      USB device number
+        :param lazy:        Only initialize the device when needed
+        :param op_check:    Check for support before doing any operation
+                            (Some devices can do more than they admit to, hence
+                            the option to disable it)
         """
         self._logger = logging.getLogger()
 
@@ -454,6 +462,7 @@ class Camera(object):
         #       actions are to be performed simultaneously.
         self._ctx = lib.gp_context_new()
         self._initialized = False
+        self._op_check = op_check
         self._usb_address = (bus, device)
         self._abilities = _abilities
         if not lazy:
