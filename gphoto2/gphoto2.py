@@ -7,6 +7,7 @@ import math
 import os
 import re
 import string
+import time
 from collections import namedtuple
 from datetime import datetime
 
@@ -42,6 +43,39 @@ DirectoryOperations = IntEnum(b'DirectoryOperations', {
     'create': lib.GP_FOLDER_OPERATION_MAKE_DIR,
     'delete_all': lib.GP_FOLDER_OPERATION_DELETE_ALL,
     'upload': lib.GP_FOLDER_OPERATION_PUT_FILE})
+
+
+class VideoCaptureContext(object):
+    """ Context object that allows the stopping of a video capture via the
+        :py:meth:`start` method.
+
+    Can also be used as a context manager, where the capture will be stopped
+    upon leaving. Get the resulting videofile by accessing the
+    :py:attr:`videofile` attribute.
+    """
+    def __init__(self, camera):
+        self.camera = camera
+        self.videofile = None
+        target = self.camera.config['settings']['capturetarget']
+        self._old_captarget = target.value
+        if self._old_captarget != "Memory card":
+            target.set("Memory card")
+        self.camera._get_config()['actions']['movie'].set(True)
+
+    def stop(self):
+        self.camera._get_config()['actions']['movie'].set(False)
+        self.videofile = self.camera._wait_for_event(
+            event_type=lib.GP_EVENT_FILE_ADDED)
+        if self._old_captarget != "Memory card":
+            self.camera.config['settings']['capturetarget'].set(
+                self._old_captarget)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.videofile is None:
+            self.stop()
 
 _global_ctx = lib.gp_context_new()
 
@@ -625,7 +659,7 @@ class Camera(object):
             target.set("Internal RAM")
         lib.gp_camera_trigger_capture(self._cam, self._ctx)
 
-        fobj = self._wait_for_event(lib.GP_EVENT_FILE_ADDED)
+        fobj = self._wait_for_event(event_type=lib.GP_EVENT_FILE_ADDED)
         if to_camera_storage:
             self._logger.info("File written to storage at {0}.".format(fobj))
             return fobj
@@ -633,6 +667,33 @@ class Camera(object):
             data = fobj.get_data()
             fobj.remove()
             return data
+
+    def capture_video_context(self):
+        """ Get a :py:class:`VideoCaptureContext` object.
+
+        This allows the user to control when to stop the video capture.
+
+        :rtype:     :py:class:`VideoCaptureContext`
+        """
+        return VideoCaptureContext(self)
+
+    def capture_video(self, length=None, get_context=False):
+        """ Capture a video.
+
+        This always writes to the memory card, since internal RAM is likely
+        to run out of space very quickly.
+
+        Currently this only works with Nikon cameras.
+
+        :param length:      Length of the video to capture in seconds.
+        :type length:       int
+        :para
+        :return:            Video file
+        :rtype:             :py:class:`File`
+        """
+        with self.capture_video_context() as ctx:
+            time.sleep(length)
+        return ctx.videofile
 
     @_needs_initialized
     @_needs_op(CameraOperations.capture_preview)
