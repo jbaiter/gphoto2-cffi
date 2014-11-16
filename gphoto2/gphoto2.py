@@ -6,6 +6,7 @@ import logging
 import math
 import os
 import re
+import string
 from collections import namedtuple
 from datetime import datetime
 
@@ -502,9 +503,23 @@ class Camera(object):
 
         :rtype:     dict
         """
-        root_widget = ffi.new("CameraWidget**")
-        lib.gp_camera_get_config(self._cam, root_widget, self._ctx)
-        return self._widget_to_dict(root_widget[0])
+        config = self._get_config()
+        return {section: {itm.name: itm for itm in config[section].values()
+                          if not itm.readonly}
+                for section in config
+                if 'settings' in section or section == 'other'}
+
+    @property
+    @_needs_initialized
+    def status(self):
+        config = self._get_config()
+        is_hex = lambda name: (len(name) == 4 and
+                               all(c in string.hexdigits for c in name))
+        return SimpleNamespace(**dict(itertools.chain(
+            *(((i.name, i.value)
+               for i in config[sect].values()
+               if i.readonly and not is_hex(i.name))
+              for sect in config))))
 
     @property
     @_needs_initialized
@@ -697,20 +712,24 @@ class Camera(object):
             return File(name=ffi.string(camfile_p[0].name),
                         directory=directory, camera=self)
 
-    def _widget_to_dict(self, cwidget):
-        out = {}
-        for idx in xrange(lib.gp_widget_count_children(cwidget)):
-            child_p = ffi.new("CameraWidget**")
-            lib.gp_widget_get_child(cwidget, idx, child_p)
-            key = get_string(lib.gp_widget_get_name, child_p[0])
-            typenum = get_ctype("CameraWidgetType*", lib.gp_widget_get_type,
-                                child_p[0])
-            if typenum in (lib.GP_WIDGET_WINDOW, lib.GP_WIDGET_SECTION):
-                out[key] = self._widget_to_dict(child_p[0])
-            else:
-                itm = ConfigItem(child_p[0], self)
-                out[key] = itm
-        return out
+    def _get_config(self):
+        def _widget_to_dict(cwidget):
+            out = {}
+            for idx in xrange(lib.gp_widget_count_children(cwidget)):
+                child_p = ffi.new("CameraWidget**")
+                lib.gp_widget_get_child(cwidget, idx, child_p)
+                key = get_string(lib.gp_widget_get_name, child_p[0])
+                typenum = get_ctype("CameraWidgetType*",
+                                    lib.gp_widget_get_type, child_p[0])
+                if typenum in (lib.GP_WIDGET_WINDOW, lib.GP_WIDGET_SECTION):
+                    out[key] = _widget_to_dict(child_p[0])
+                else:
+                    item = ConfigItem(child_p[0], self)
+                    out[key] = item
+            return out
+        root_widget = ffi.new("CameraWidget**")
+        lib.gp_camera_get_config(self._cam, root_widget, self._ctx)
+        return _widget_to_dict(root_widget[0])
 
     def __repr__(self):
         return "<Camera \"{0}\" at usb:{1:03}:{2:03}>".format(
