@@ -28,6 +28,9 @@ setup(
     author_email="johannes.baiter@gmail.com",
     license='LGPLv3',
     packages=['gphoto2'],
+    package_data={
+        'gphoto2': ['*.cdef']
+    },
     zip_safe=False,
     ext_modules=[ffi.verifier.get_extension()],
     install_requires=[
