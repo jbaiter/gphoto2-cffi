@@ -1,5 +1,6 @@
+=============
 gphoto2-cffi
-============
+=============
 
 Python bindings for `libgphoto2`_ with an idiomatic interface and `PyPy`_
 support, using `cffi`_. In contrast to other bindings for Python, gphoto2-cffi
@@ -67,3 +68,12 @@ Similar projects
 
 * `piggyphoto <https://github.com/alexdu/piggyphoto>`_: Uses ctypes
 * `python-gphoto2 <https://github.com/jim-easterbrook/python-gphoto2>`_: Uses SWIG
+
+
+API Reference
+=============
+
+.. automodule:: gphoto2.gphoto2
+    :members:
+    :undoc-members:
+    :member-order: groupwise

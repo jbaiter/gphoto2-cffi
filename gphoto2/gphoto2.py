@@ -47,14 +47,17 @@ DirectoryOperations = IntEnum(b'DirectoryOperations', {
 
 class VideoCaptureContext(object):
     """ Context object that allows the stopping of a video capture via the
-        :py:meth:`start` method.
+    :py:meth:`start` method.
 
     Can also be used as a context manager, where the capture will be stopped
     upon leaving. Get the resulting videofile by accessing the
     :py:attr:`videofile` attribute.
     """
     def __init__(self, camera):
+        #: Camera the capture is running on
         self.camera = camera
+        #: Resulting video :py:class:`File`, only available after stopping
+        #: the capture
         self.videofile = None
         target = self.camera.config['settings']['capturetarget']
         self._old_captarget = target.value
@@ -63,6 +66,7 @@ class VideoCaptureContext(object):
         self.camera._get_config()['actions']['movie'].set(True)
 
     def stop(self):
+        """ Stop the capture. """
         self.camera._get_config()['actions']['movie'].set(False)
         self.videofile = self.camera._wait_for_event(
             event_type=lib.GP_EVENT_FILE_ADDED)
@@ -176,11 +180,14 @@ class Directory(object):
 
     @_needs_op(DirectoryOperations.create)
     def create(self):
+        """ Create the directory. """
         lib.gp_camera_folder_make_dir(self._cam._cam, self.parent.path,
                                       self.name, self._cam._ctx)
 
     @_needs_op(DirectoryOperations.remove)
-    def remove(self, recurse=False):
+    def remove(self):
+        """ Remove the directory. """
+
         lib.gp_camera_folder_remove_dir(self._cam._cam, self.parent.path,
                                         self.name, self._cam._ctx)
 
@@ -364,38 +371,34 @@ class File(object):
 
 
 class ConfigItem(object):
-    """ A configuration option on the device.
-
-    :attr name:     Short name
-    :attr value:    Current value
-    :attr type:     Type of option, can be one of `selection`, `text`,
-                    `range`, `toggle` or `date`.
-    :attr label:    Human-readable label
-    :attr info:     Information about the widget
-    :attr choices:  Valid choices for value, only present when :py:attr:`type`
-                    is `selection`.
-    :attr range:    Valid range for value, only present when :py:attr:`type`
-                    is `range`.
-    :attr readonly: Whether the value can be written to or not
-    """
+    """ A configuration option on the device. """
     def __init__(self, widget, camera):
         self._widget = widget
         root_p = ffi.new("CameraWidget**")
         lib.gp_widget_get_root(self._widget, root_p)
         self._root = root_p[0]
         self._cam = camera
+        #: Short name
         self.name = get_string(lib.gp_widget_get_name, widget)
         typenum = get_ctype("CameraWidgetType*", lib.gp_widget_get_type,
                             widget)
+        #: Type of option, can be one of `selection`, `text`, `range`,
+        #: `toggle` or `date`.
         self.type = backend.WIDGET_TYPES[typenum]
+        #: Human-readable label
         self.label = get_string(lib.gp_widget_get_label, widget)
+        #: Information about the widget
         self.info = get_string(lib.gp_widget_get_info, widget)
+        #: Current value
+        self.value = None
 
         value_fn = lib.gp_widget_get_value
         if self.type in ('selection', 'text'):
             self.value = get_string(value_fn, widget)
         elif self.type == 'range':
             self.value = get_ctype("float*", value_fn, widget)
+            #: Valid range for value, only present when :py:attr:`type` is
+            #: `range`.
             self.range = self._read_range()
         elif self.type in ('toggle', 'date'):
             val = get_ctype("int*", value_fn, widget)
@@ -407,7 +410,10 @@ class ConfigItem(object):
             raise ValueError("Unsupported widget type for ConfigItem: {0}"
                              .format(self.type))
         if self.type == 'selection':
+            #: Valid choices for value, only present when :py:attr:`type`
+            #: is `selection`.
             self.choices = self._read_choices()
+        #: Whether the value can be written to or not
         self.readonly = bool(get_ctype(
             "int*", lib.gp_widget_get_readonly, widget))
 
@@ -479,20 +485,20 @@ class ConfigItem(object):
 
 
 class Camera(object):
+    """ A camera device.
+
+    The specific device can be auto-detected or set manually by
+    specifying the USB bus and device number.
+
+    :param bus:         USB bus number
+    :param device:      USB device number
+    :param lazy:        Only initialize the device when needed
+    :param op_check:    Check for support before doing any operation
+                        (Some devices can do more than they admit to, hence
+                        the option to disable it)
+    """
     def __init__(self, bus=None, device=None, lazy=False, op_check=True,
                  _abilities=None):
-        """ A camera device.
-
-        The specific device can be auto-detected or set manually by
-        specifying the USB bus and device number.
-
-        :param bus:         USB bus number
-        :param device:      USB device number
-        :param lazy:        Only initialize the device when needed
-        :param op_check:    Check for support before doing any operation
-                            (Some devices can do more than they admit to, hence
-                            the option to disable it)
-        """
         self._logger = logging.getLogger()
 
         # NOTE: It is not strictly neccessary to create a context for every
@@ -677,7 +683,7 @@ class Camera(object):
         """
         return VideoCaptureContext(self)
 
-    def capture_video(self, length=None, get_context=False):
+    def capture_video(self, length):
         """ Capture a video.
 
         This always writes to the memory card, since internal RAM is likely
@@ -687,7 +693,6 @@ class Camera(object):
 
         :param length:      Length of the video to capture in seconds.
         :type length:       int
-        :para
         :return:            Video file
         :rtype:             :py:class:`File`
         """
@@ -805,7 +810,7 @@ def list_cameras():
     """ List all attached USB cameras that are supported by libgphoto2.
 
     :return:    All recognized cameras
-    :rtype:     list of :py:class:`UsbDevice`
+    :rtype:     list of :py:class:`Camera`
     """
     camlist_p = new_gp_object("CameraList")
     port_list_p = new_gp_object("GPPortInfoList")
