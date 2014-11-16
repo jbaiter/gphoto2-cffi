@@ -664,7 +664,11 @@ class Camera(object):
             lib.gp_camera_get_abilities(self._cam, self._abilities)
         self._initialized = True
 
-    def _wait_for_event(self, event_type):
+    def _wait_for_event(self, event_type=None, duration=0):
+        if event_type is None and not duration:
+            raise ValueError("Please specifiy either `event_type` or "
+                             "`duration!`")
+        start_time = time.time()
         event_type_p = ffi.new("CameraEventType*")
         event_data_p = ffi.new("void**", ffi.NULL)
         while True:
@@ -676,9 +680,15 @@ class Camera(object):
                 continue
             if event_type_p[0] == lib.GP_EVENT_CAPTURE_COMPLETE:
                 self._logger.info("Capture completed.")
-            if event_type_p[0] == lib.GP_EVENT_FILE_ADDED:
+            elif event_type_p[0] == lib.GP_EVENT_FILE_ADDED:
                 self._logger.info("File added.")
-            if event_type_p[0] == event_type:
+            elif event_type_p[0] == lib.GP_EVENT_TIMEOUT:
+                self._logger.debug("Timeout while waiting for event.")
+                continue
+            do_break = (event_type_p[0] == event_type or
+                        ((time.time() - start_time > duration)
+                         if duration else False))
+            if do_break:
                 break
         if event_type == lib.GP_EVENT_FILE_ADDED:
             camfile_p = ffi.cast("CameraFilePath*", event_data_p[0])
