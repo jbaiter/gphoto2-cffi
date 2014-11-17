@@ -74,6 +74,6 @@ API Reference
 =============
 
 .. automodule:: gphoto2.gphoto2
-    :members:
+    :members: list_cameras, Camera, Directory, File, ConfigItem,
+              VideoCaptureContext, Range, ImageDimensions, UsbInformation
     :undoc-members:
-    :member-order: bysource
