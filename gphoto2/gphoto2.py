@@ -11,10 +11,9 @@ import time
 from collections import namedtuple
 from datetime import datetime
 
-from enum import IntEnum
-
-from . import backend, errors
-from .backend import ffi, lib, get_string, get_ctype, new_gp_object
+from . import errors
+from .backend import (ffi, lib, globals as gp_globals, get_string, get_ctype,
+                      new_gp_object)
 from .util import SimpleNamespace
 
 Range = namedtuple("Range", ('min', 'max', 'step'))
@@ -25,24 +24,6 @@ StorageInformation = namedtuple(
     "StorageInformation",
     ('label', 'directory', 'description', 'type', 'accesstype',
      'total_space', 'free_space', 'remaining_images'))
-FileOperations = IntEnum(b'FileOperations', {
-    'remove': lib.GP_FILE_OPERATION_DELETE,
-    'extract_preview': lib.GP_FILE_OPERATION_PREVIEW,
-    'extract_raw': lib.GP_FILE_OPERATION_RAW,
-    'extract_audio': lib.GP_FILE_OPERATION_AUDIO,
-    'extract_exif': lib.GP_FILE_OPERATION_EXIF})
-CameraOperations = IntEnum(b'CameraOperations', {
-    'capture_image': lib.GP_OPERATION_CAPTURE_IMAGE,
-    'capture_video': lib.GP_OPERATION_CAPTURE_VIDEO,
-    'capture_audio': lib.GP_OPERATION_CAPTURE_AUDIO,
-    'capture_preview': lib.GP_OPERATION_CAPTURE_PREVIEW,
-    'update_config': lib.GP_OPERATION_CONFIG,
-    'trigger_capture': lib.GP_OPERATION_TRIGGER_CAPTURE})
-DirectoryOperations = IntEnum(b'DirectoryOperations', {
-    'remove': lib.GP_FOLDER_OPERATION_REMOVE_DIR,
-    'create': lib.GP_FOLDER_OPERATION_MAKE_DIR,
-    'delete_all': lib.GP_FOLDER_OPERATION_DELETE_ALL,
-    'upload': lib.GP_FOLDER_OPERATION_PUT_FILE})
 
 
 class VideoCaptureContext(object):
@@ -81,8 +62,6 @@ class VideoCaptureContext(object):
         if self.videofile is None:
             self.stop()
 
-_global_ctx = lib.gp_context_new()
-
 
 def _infoproperty(prop_func):
     """ Decorator that creates a property method that checks for the presence
@@ -112,20 +91,14 @@ def _needs_initialized(func):
     return decorated
 
 
-def _needs_op(op):
-    """ Decorator that checks the `supported_operations` for the specified
+def _check_for_op(obj, op):
+    """ Checks `obj.supported_operations` for the specified
         operation and throws a RuntimeException if it is unsupported.
     """
     # TODO: Is this really needed? Check if the library responds with sensible
     # error messages on unsupported operations?
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapped(self, *args, **kwargs):
-            if self._op_check and op not in self.supported_operations:
-                raise RuntimeError("Device does not support this operation.")
-            return func(self, *args, **kwargs)
-        return wrapped
-    return decorator
+    if obj._op_check and op not in obj.supported_operations:
+        raise RuntimeError("Device does not support this operation.")
 
 
 class Directory(object):
@@ -137,6 +110,7 @@ class Directory(object):
         self._dir_ops = camera._abilities.folder_operations
         self._op_check = camera._op_check
         self._cam = camera
+        self._check_for_op = functools.partial(_check_for_op, self)
 
     @property
     def path(self):
@@ -147,8 +121,7 @@ class Directory(object):
 
     @property
     def supported_operations(self):
-        return tuple(op for op in DirectoryOperations
-                     if self._dir_ops & op)
+        return tuple(op for op in gp_globals.DIR_OPS if self._dir_ops & op)
 
     @property
     def exists(self):
@@ -178,33 +151,34 @@ class Directory(object):
             yield Directory(name=name, parent=self, camera=self._cam)
         lib.gp_list_free(dirlist_p)
 
-    @_needs_op(DirectoryOperations.create)
     def create(self):
         """ Create the directory. """
+        self._check_for_op(gp_globals.DIR_OPS.create)
         lib.gp_camera_folder_make_dir(self._cam._cam, self.parent.path,
                                       self.name, self._cam._ctx)
 
-    @_needs_op(DirectoryOperations.remove)
     def remove(self):
         """ Remove the directory. """
 
+        self._check_for_op(gp_globals.DIR_OPS.remove)
         lib.gp_camera_folder_remove_dir(self._cam._cam, self.parent.path,
                                         self.name, self._cam._ctx)
 
-    @_needs_op(DirectoryOperations.upload)
     def upload(self, local_path):
         """ Upload a file to the camera's permanent storage.
 
         :param local_path: Path to file to copy
         :type local_path:  str/unicode
         """
+        self._check_for_op(gp_globals.DIR_OPS.upload)
         camerafile_p = ffi.new("CameraFile**")
         with open(local_path, 'rb') as fp:
             lib.gp_file_new_from_fd(camerafile_p, fp.fileno())
             lib.gp_camera_folder_put_file(
                 self._cam._cam, bytes(self.path) + b"/",
                 bytes(os.path.basename(local_path)),
-                backend.FILE_TYPES['normal'], camerafile_p[0], self.__cam.ctx)
+                gp_globals.FILE_TYPES['normal'], camerafile_p[0],
+                self._cam.ctx)
 
     def __eq__(self, other):
         return (self.name == other.name and
@@ -224,11 +198,11 @@ class File(object):
         self._operations = camera._abilities.file_operations
         self._op_check = camera._op_check
         self._info = None
+        self._check_for_op = functools.partial(_check_for_op, self)
 
     @property
     def supported_operations(self):
-        return tuple(op for op in FileOperations
-                     if self._operations & op)
+        return tuple(op for op in gp_globals.FILE_OPS if self._operations & op)
 
     @_infoproperty
     def size(self):
@@ -290,7 +264,7 @@ class File(object):
         with open(target_path, 'wb') as fp:
             lib.gp_file_new_from_fd(camfile_p, fp.fileno())
             lib.gp_camera_file_get(self._cam._cam, bytes(self.directory.path),
-                                   self.name, backend.FILE_TYPES[ftype],
+                                   self.name, gp_globals.FILE_TYPES[ftype],
                                    camfile_p[0], self._cam._ctx)
 
     def get_data(self, ftype='normal'):
@@ -306,7 +280,7 @@ class File(object):
         camfile_p = ffi.new("CameraFile**")
         lib.gp_file_new(camfile_p)
         lib.gp_camera_file_get(self._cam._cam, bytes(self.directory.path),
-                               self.name, backend.FILE_TYPES[ftype],
+                               self.name, gp_globals.FILE_TYPES[ftype],
                                camfile_p[0], self._cam._ctx)
         data_p = ffi.new("char**")
         length_p = ffi.new("unsigned long*")
@@ -330,22 +304,22 @@ class File(object):
             size_p[0] = chunk_size
             lib.gp_camera_file_read(
                 self._cam._cam, bytes(self.directory.path), self.name,
-                backend.FILE_TYPES[ftype], offset_p[0],
+                gp_globals.FILE_TYPES[ftype], offset_p[0],
                 buf_p, size_p, self._cam._ctx)
             yield ffi.buffer(buf_p, size_p[0])[:]
 
-    @_needs_op(FileOperations.remove)
     def remove(self):
         """ Remove file from device. """
+        self._check_for_op(gp_globals.FILE_OPS.remove)
         lib.gp_camera_file_delete(self._cam._cam, bytes(self.directory.path),
                                   self.name, self._cam._ctx)
 
     def _check_type_supported(self, ftype):
-        if ftype not in backend.FILE_TYPES:
+        if ftype not in gp_globals.FILE_TYPES:
             raise ValueError("`ftype` must be one of {0}"
-                             .format(backend.FILE_TYPES.keys()))
+                             .format(gp_globals.FILE_TYPES.keys()))
         valid_ops = self.supported_operations
-        fops = FileOperations
+        fops = gp_globals.FILE_OPS
         op_is_unsupported = (
             (ftype == 'exif' and fops.extract_exif not in valid_ops) or
             (ftype == 'preview' and fops.extract_preview not in valid_ops) or
@@ -384,7 +358,7 @@ class ConfigItem(object):
                             widget)
         #: Type of option, can be one of `selection`, `text`, `range`,
         #: `toggle` or `date`.
-        self.type = backend.WIDGET_TYPES[typenum]
+        self.type = gp_globals.WIDGET_TYPES[typenum]
         #: Human-readable label
         self.label = get_string(lib.gp_widget_get_label, widget)
         #: Information about the widget
@@ -511,12 +485,13 @@ class Camera(object):
         self._abilities = _abilities
         if not lazy:
             self._initialize()
+        self._check_for_op = functools.partial(_check_for_op, self)
 
     @property
     def supported_operations(self):
         if self._abilities is None:
             self._initialize()
-        return tuple(op for op in CameraOperations
+        return tuple(op for op in gp_globals.CAM_OPS
                      if self._abilities.operations & op)
 
     @property
@@ -537,12 +512,12 @@ class Camera(object):
 
     @property
     @_needs_initialized
-    @_needs_op(CameraOperations.update_config)
     def config(self):
         """ Configuration for the camera.
 
         :rtype:     dict
         """
+        self._check_for_op(gp_globals.CAM_OPS.update_config)
         config = self._get_config()
         return {section: {itm.name: itm for itm in config[section].values()
                           if not itm.readonly}
@@ -642,7 +617,6 @@ class Camera(object):
         return list_dirs_recursively(self.filesystem)
 
     @_needs_initialized
-    @_needs_op(CameraOperations.capture_image)
     def capture(self, to_camera_storage=False):
         """ Capture an image.
 
@@ -658,6 +632,7 @@ class Camera(object):
                     otherwise the captured image as a bytestring.
         :rtype:     :py:class:`File` or bytes
         """
+        self._check_for_op(gp_globals.CAM_OPS.capture_image)
         target = self.config['settings']['capturetarget']
         if to_camera_storage and target.value != "Memory card":
             target.set("Memory card")
@@ -701,7 +676,6 @@ class Camera(object):
         return ctx.videofile
 
     @_needs_initialized
-    @_needs_op(CameraOperations.capture_preview)
     def get_preview(self):
         """ Get a preview from the camera's viewport.
 
@@ -711,6 +685,7 @@ class Camera(object):
         :return:    The preview image as a bytestring
         :rtype:     bytes
         """
+        self._check_for_op(gp_globals.CAM_OPS.capture_preview)
         camfile_p = ffi.new("CameraFile**")
         lib.gp_file_new(camfile_p)
         lib.gp_camera_capture_preview(self._cam, camfile_p[0], self._ctx)
@@ -812,13 +787,14 @@ def list_cameras():
     :return:    All recognized cameras
     :rtype:     list of :py:class:`Camera`
     """
+    ctx = lib.gp_context_new()
     camlist_p = new_gp_object("CameraList")
     port_list_p = new_gp_object("GPPortInfoList")
     lib.gp_port_info_list_load(port_list_p)
     abilities_list_p = new_gp_object("CameraAbilitiesList")
-    lib.gp_abilities_list_load(abilities_list_p, _global_ctx)
+    lib.gp_abilities_list_load(abilities_list_p, ctx)
     lib.gp_abilities_list_detect(abilities_list_p, port_list_p,
-                                 camlist_p, _global_ctx)
+                                 camlist_p, ctx)
     out = []
     for idx in xrange(lib.gp_list_count(camlist_p)):
         name = get_string(lib.gp_list_get_name, camlist_p, idx)
