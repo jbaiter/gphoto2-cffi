@@ -12,9 +12,8 @@ from collections import namedtuple
 from datetime import datetime
 
 from . import errors
-from .backend import (ffi, lib, globals as gp_globals, get_string, get_ctype,
-                      new_gp_object)
-from .util import SimpleNamespace
+from .backend import ffi, lib, globals as gp_globals
+from .util import SimpleNamespace, get_string, get_ctype, new_gp_object
 
 Range = namedtuple("Range", ('min', 'max', 'step'))
 ImageDimensions = namedtuple("ImageDimensions", ('width', 'height'))
