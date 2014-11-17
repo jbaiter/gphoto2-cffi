@@ -30,7 +30,7 @@ def _create_modulename(cdef_sources, source, sys_version):
     k1 = k1.lstrip('0x').rstrip('L')
     k2 = hex(binascii.crc32(key[1::2]) & 0xffffffff)
     k2 = k2.lstrip('0').rstrip('L')
-    return '_Example_cffi_{0}{1}'.format(k1, k2)
+    return '_gphoto2_cffi_{0}{1}'.format(k1, k2)
 
 
 def _compile_module(*args, **kwargs):
