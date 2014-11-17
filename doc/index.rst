@@ -3,9 +3,9 @@ gphoto2-cffi
 =============
 
 Python bindings for `libgphoto2`_ with an interface that strives to be
-idiomatic. In contrast to other bindings for Python, gphoto2-cffi hides most of
-the lower-level abstractions and allows you to work with an elegent API that
-exposes most of the library's features in an idiomatic interface:
+idiomatic. In contrast to other bindings for Python, gphoto2-cffi hides most
+of the lower-level abstractions and reduces the API surface while still
+offering access to most of the library's features.
 
 .. code:: python
 
