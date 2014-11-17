@@ -15,14 +15,62 @@ from . import errors
 from .backend import ffi, lib, globals as gp_globals
 from .util import SimpleNamespace, get_string, get_ctype, new_gp_object
 
-Range = namedtuple("Range", ('min', 'max', 'step'))
-ImageDimensions = namedtuple("ImageDimensions", ('width', 'height'))
-UsbInformation = namedtuple("UsbInformation", ('vendor', 'product', 'devclass',
-                                               'subclass', 'protocol'))
-StorageInformation = namedtuple(
-    "StorageInformation",
-    ('label', 'directory', 'description', 'type', 'accesstype',
-     'total_space', 'free_space', 'remaining_images'))
+
+def list_cameras():
+    """ List all attached USB cameras that are supported by libgphoto2.
+
+    :return:    All recognized cameras
+    :rtype:     list of :py:class:`Camera`
+    """
+    ctx = lib.gp_context_new()
+    camlist_p = new_gp_object("CameraList")
+    port_list_p = new_gp_object("GPPortInfoList")
+    lib.gp_port_info_list_load(port_list_p)
+    abilities_list_p = new_gp_object("CameraAbilitiesList")
+    lib.gp_abilities_list_load(abilities_list_p, ctx)
+    lib.gp_abilities_list_detect(abilities_list_p, port_list_p,
+                                 camlist_p, ctx)
+    out = []
+    for idx in xrange(lib.gp_list_count(camlist_p)):
+        name = get_string(lib.gp_list_get_name, camlist_p, idx)
+        value = get_string(lib.gp_list_get_value, camlist_p, idx)
+        bus_no, device_no = (int(x) for x in
+                             re.match(r"usb:(\d+),(\d+)", value).groups())
+        abilities = ffi.new("CameraAbilities*")
+        ability_idx = lib.gp_abilities_list_lookup_model(
+            abilities_list_p, name)
+        lib.gp_abilities_list_get_abilities(abilities_list_p, ability_idx,
+                                            abilities)
+        if abilities.device_type == lib.GP_DEVICE_STILL_CAMERA:
+            out.append(Camera(bus_no, device_no, lazy=True,
+                              _abilities=abilities))
+    lib.gp_list_free(camlist_p)
+    lib.gp_port_info_list_free(port_list_p)
+    lib.gp_abilities_list_free(abilities_list_p)
+    return out
+
+
+class Range(namedtuple("Range", ('min', 'max', 'step'))):
+    """ Specifies a range of values (:py:attr:`max`, :py:attr:`min`,
+        :py:attr:`step`)
+    """
+    pass
+
+
+class ImageDimensions(namedtuple("ImageDimensions", ('width', 'height'))):
+    """ Describes the dimension of an image (:py:attr:`width`,
+        :py:attr:`height`)
+    """
+    pass
+
+
+class UsbInformation(namedtuple(
+    "UsbInformation", ('vendor', 'product', 'devclass', 'subclass',
+                       'protocol'))):
+    """ Information about a USB device. (:py:attr:`vendor`,
+        :py:attr:`product`, :py:attr:`devclass`, :py:attr:`subclass`)
+    """
+    pass
 
 
 class VideoCaptureContext(object):
@@ -62,34 +110,6 @@ class VideoCaptureContext(object):
             self.stop()
 
 
-def _infoproperty(prop_func):
-    """ Decorator that creates a property method that checks for the presence
-        of the _info struct and updates it, if absent.
-    """
-    @functools.wraps(prop_func)
-    def decorated(self, *args, **kwargs):
-        if self._info is None:
-            try:
-                self._update_info()
-            except errors.GPhoto2Error:
-                raise ValueError("Could not get file info, are you sure "
-                                 "the file exists on the device?")
-        return prop_func(self, *args, **kwargs)
-    return property(fget=decorated, doc=prop_func.__doc__)
-
-
-def _needs_initialized(func):
-    """ Decorator that checks if the :py:class:`Camera` is already initialized
-        and does so, if not.
-    """
-    @functools.wraps(func)
-    def decorated(self, *args, **kwargs):
-        if not self._initialized:
-            self._initialize()
-        return func(self, *args, **kwargs)
-    return decorated
-
-
 def _check_for_op(obj, op):
     """ Checks `obj.supported_operations` for the specified
         operation and throws a RuntimeException if it is unsupported.
@@ -113,6 +133,7 @@ class Directory(object):
 
     @property
     def path(self):
+        """ Absolute path to the directory on the camera's filesystem. """
         if self.parent is None:
             return "/"
         else:
@@ -120,10 +141,12 @@ class Directory(object):
 
     @property
     def supported_operations(self):
+        """ All directory operations supported by the camera. """
         return tuple(op for op in gp_globals.DIR_OPS if self._dir_ops & op)
 
     @property
     def exists(self):
+        """ Check whether the directory exists on the camera. """
         if self.name in ("", "/") and self.parent is None:
             return True
         else:
@@ -131,6 +154,7 @@ class Directory(object):
 
     @property
     def files(self):
+        """ Get a generator that yields all files in the directory. """
         filelist_p = new_gp_object("CameraList")
         lib.gp_camera_folder_list_files(self._cam._cam, bytes(self.path),
                                         filelist_p, self._cam._ctx)
@@ -141,6 +165,8 @@ class Directory(object):
 
     @property
     def directories(self):
+        """ Get a generator that yields all subdirectories in the directory.
+        """
         dirlist_p = new_gp_object("CameraList")
         lib.gp_camera_folder_list_folders(self._cam._cam, bytes(self.path),
                                           dirlist_p, self._cam._ctx)
@@ -196,22 +222,23 @@ class File(object):
         self._cam = camera
         self._operations = camera._abilities.file_operations
         self._op_check = camera._op_check
-        self._info = None
+        self.__info = None
         self._check_for_op = functools.partial(_check_for_op, self)
 
     @property
     def supported_operations(self):
+        """ All file operations supported by the camera. """
         return tuple(op for op in gp_globals.FILE_OPS if self._operations & op)
 
-    @_infoproperty
+    @property
     def size(self):
         """ File size in bytes.
 
         :rtype: int
         """
-        return self._info.file.size
+        return int(self._info.file.size)
 
-    @_infoproperty
+    @property
     def mimetype(self):
         """ MIME type of the file.
 
@@ -219,7 +246,7 @@ class File(object):
         """
         return ffi.string(self._info.file.type)
 
-    @_infoproperty
+    @property
     def dimensions(self):
         """ Dimensions of the image.
 
@@ -227,7 +254,7 @@ class File(object):
         """
         return ImageDimensions(self._info.file.width, self._info.file.height)
 
-    @_infoproperty
+    @property
     def permissions(self):
         """ Permissions of the file.
 
@@ -241,7 +268,7 @@ class File(object):
         return "{0}{1}".format("r" if can_read else "-",
                                "w" if can_write else "-")
 
-    @_infoproperty
+    @property
     def last_modified(self):
         """ Date of last modification.
 
@@ -286,13 +313,13 @@ class File(object):
         lib.gp_file_get_data_and_size(camfile_p[0], data_p, length_p)
         return ffi.buffer(data_p[0], length_p[0])[:]
 
-    def iter_data(self, ftype='normal', chunk_size=2**16):
+    def iter_data(self, chunk_size=2**16, ftype='normal'):
         """ Get an iterator that yields chunks of the file content.
 
-        :param ftype:       Select 'view' on file.
-        :type ftype:        str
         :param chunk_size:  Size of yielded chunks in bytes
         :type chunk_size:   int
+        :param ftype:       Select 'view' on file.
+        :type ftype:        str
         :return:            Iterator
         """
         self._check_type_supported(ftype)
@@ -327,11 +354,18 @@ class File(object):
         if op_is_unsupported:
             raise RuntimeError("Operation is not supported for this type.")
 
-    def _update_info(self):
-        info = ffi.new("CameraFileInfo*")
-        lib.gp_camera_file_get_info(self._cam._cam, bytes(self.directory.path),
-                                    self.name, info, self._cam._ctx)
-        self._info = info
+    @property
+    def _info(self):
+        if self.__info is None:
+            self.__info = ffi.new("CameraFileInfo*")
+            try:
+                lib.gp_camera_file_get_info(
+                    self._cam._cam, bytes(self.directory.path), self.name,
+                    self.__info, self._cam._ctx)
+            except errors.GPhoto2Error:
+                raise ValueError("Could not get file info, are you sure the "
+                                 "file exists on the device?")
+        return self.__info
 
     def __eq__(self, other):
         return (self.name == other.name and
@@ -478,25 +512,23 @@ class Camera(object):
         #       device, however it is significantly (>500ms) faster when
         #       actions are to be performed simultaneously.
         self._ctx = lib.gp_context_new()
-        self._initialized = False
         self._op_check = op_check
         self._usb_address = (bus, device)
-        self._abilities = _abilities
+        self.__abilities = _abilities
+        self.__cam = None
         if not lazy:
-            self._initialize()
+            self._cam()
         self._check_for_op = functools.partial(_check_for_op, self)
 
     @property
     def supported_operations(self):
-        if self._abilities is None:
-            self._initialize()
+        """ All operations supported by the camera. """
         return tuple(op for op in gp_globals.CAM_OPS
                      if self._abilities.operations & op)
 
     @property
     def usb_info(self):
-        if self._abilities is None:
-            self._initialize()
+        """ The camera's USB information. """
         return UsbInformation(self._abilities.usb_vendor,
                               self._abilities.usb_product,
                               self._abilities.usb_class,
@@ -505,14 +537,12 @@ class Camera(object):
 
     @property
     def model_name(self):
-        if self._abilities is None:
-            self._initialize()
+        """ Camera model name as specified in the gphoto2 driver. """
         return ffi.string(self._abilities.model)
 
     @property
-    @_needs_initialized
     def config(self):
-        """ Configuration for the camera.
+        """ Writeable configuration parameters.
 
         :rtype:     dict
         """
@@ -524,8 +554,11 @@ class Camera(object):
                 if 'settings' in section or section == 'other'}
 
     @property
-    @_needs_initialized
     def status(self):
+        """ Status information (read-only).
+
+        :rtype:     :py:class:`SimpleNamespace`
+        """
         config = self._get_config()
         is_hex = lambda name: (len(name) == 4 and
                                all(c in string.hexdigits for c in name))
@@ -536,13 +569,11 @@ class Camera(object):
               for sect in config))))
 
     @property
-    @_needs_initialized
     def filesystem(self):
         """ The camera's root directory. """
         return Directory(name="/", parent=None, camera=self)
 
     @property
-    @_needs_initialized
     def storage_info(self):
         """ Information about the camera's storage. """
         info_p = ffi.new("CameraStorageInformation**")
@@ -596,7 +627,8 @@ class Camera(object):
         def list_files_recursively(directory):
             f_gen = itertools.chain(
                 directory.files,
-                *(list_files_recursively(d) for d in directory.directories))
+                *tuple(list_files_recursively(d)
+                       for d in directory.directories))
             for f in f_gen:
                 yield f
         return list_files_recursively(self.filesystem)
@@ -610,12 +642,12 @@ class Camera(object):
                 yield directory
             d_gen = itertools.chain(
                 directory.directories,
-                *(list_dirs_recursively(d) for d in directory.directories))
+                *tuple(list_dirs_recursively(d)
+                       for d in directory.directories))
             for d in d_gen:
                 yield d
         return list_dirs_recursively(self.filesystem)
 
-    @_needs_initialized
     def capture(self, to_camera_storage=False):
         """ Capture an image.
 
@@ -674,7 +706,6 @@ class Camera(object):
             time.sleep(length)
         return ctx.videofile
 
-    @_needs_initialized
     def get_preview(self):
         """ Get a preview from the camera's viewport.
 
@@ -693,31 +724,36 @@ class Camera(object):
         lib.gp_file_get_data_and_size(camfile_p[0], data_p, length_p)
         return ffi.buffer(data_p[0], length_p[0])[:]
 
-    def _initialize(self):
-        self._cam = new_gp_object("Camera")
-        if self._usb_address != (None, None):
-            port_name = b"usb:{0:03},{1:03}".format(*self._usb_address)
-            port_list_p = new_gp_object("GPPortInfoList")
-            lib.gp_port_info_list_load(port_list_p)
-            port_info_p = ffi.new("GPPortInfo*")
-            lib.gp_port_info_new(port_info_p)
-            port_num = lib.gp_port_info_list_lookup_path(
-                port_list_p, port_name)
-            lib.gp_port_info_list_get_info(port_list_p, port_num,
-                                           port_info_p)
-            lib.gp_camera_set_port_info(self._cam, port_info_p[0])
-            lib.gp_camera_init(self._cam, self._ctx)
-        else:
-            try:
-                lib.gp_camera_init(self._cam, self._ctx)
-            except errors.UnsupportedDevice as e:
-                raise errors.UnsupportedDevice(
-                    e.error_code, "Could not find any supported devices.")
+    @property
+    def _cam(self):
+        if self.__cam is None:
+            self.__cam = new_gp_object("Camera")
+            if self._usb_address != (None, None):
+                port_name = b"usb:{0:03},{1:03}".format(*self._usb_address)
+                port_list_p = new_gp_object("GPPortInfoList")
+                lib.gp_port_info_list_load(port_list_p)
+                port_info_p = ffi.new("GPPortInfo*")
+                lib.gp_port_info_new(port_info_p)
+                port_num = lib.gp_port_info_list_lookup_path(
+                    port_list_p, port_name)
+                lib.gp_port_info_list_get_info(port_list_p, port_num,
+                                               port_info_p)
+                lib.gp_camera_set_port_info(self.__cam, port_info_p[0])
+                lib.gp_camera_init(self.__cam, self._ctx)
+            else:
+                try:
+                    lib.gp_camera_init(self.__cam, self._ctx)
+                except errors.UnsupportedDevice as e:
+                    raise errors.UnsupportedDevice(
+                        e.error_code, "Could not find any supported devices.")
+        return self.__cam
 
-        if self._abilities is None:
+    @property
+    def _abilities(self):
+        if self.__abilities is None:
             self._abilities = ffi.new("CameraAbilities*")
             lib.gp_camera_get_abilities(self._cam, self._abilities)
-        self._initialized = True
+        return self.__abilities
 
     def _wait_for_event(self, event_type=None, duration=0):
         if event_type is None and not duration:
@@ -776,39 +812,5 @@ class Camera(object):
             self.model_name, *self._usb_address)
 
     def __del__(self):
-        if self._initialized:
+        if self.__cam is not None:
             lib.gp_camera_free(self._cam)
-
-
-def list_cameras():
-    """ List all attached USB cameras that are supported by libgphoto2.
-
-    :return:    All recognized cameras
-    :rtype:     list of :py:class:`Camera`
-    """
-    ctx = lib.gp_context_new()
-    camlist_p = new_gp_object("CameraList")
-    port_list_p = new_gp_object("GPPortInfoList")
-    lib.gp_port_info_list_load(port_list_p)
-    abilities_list_p = new_gp_object("CameraAbilitiesList")
-    lib.gp_abilities_list_load(abilities_list_p, ctx)
-    lib.gp_abilities_list_detect(abilities_list_p, port_list_p,
-                                 camlist_p, ctx)
-    out = []
-    for idx in xrange(lib.gp_list_count(camlist_p)):
-        name = get_string(lib.gp_list_get_name, camlist_p, idx)
-        value = get_string(lib.gp_list_get_value, camlist_p, idx)
-        bus_no, device_no = (int(x) for x in
-                             re.match(r"usb:(\d+),(\d+)", value).groups())
-        abilities = ffi.new("CameraAbilities*")
-        ability_idx = lib.gp_abilities_list_lookup_model(
-            abilities_list_p, name)
-        lib.gp_abilities_list_get_abilities(abilities_list_p, ability_idx,
-                                            abilities)
-        if abilities.device_type == lib.GP_DEVICE_STILL_CAMERA:
-            out.append(Camera(bus_no, device_no, lazy=True,
-                              _abilities=abilities))
-    lib.gp_list_free(camlist_p)
-    lib.gp_port_info_list_free(port_list_p)
-    lib.gp_abilities_list_free(abilities_list_p)
-    return out
