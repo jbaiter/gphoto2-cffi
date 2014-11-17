@@ -3,6 +3,12 @@ import sys
 from distutils.command.build import build
 from setuptools import setup
 from setuptools.command.install import install
+from setuptools.dist import Distribution
+
+
+class BinaryDistribution(Distribution):
+        def is_pure(self):
+                    return False
 
 
 def get_ext_modules():
@@ -45,9 +51,8 @@ setup(
     author_email="johannes.baiter@gmail.com",
     license='LGPLv3',
     packages=['gphoto2'],
-    package_data={
-        'gphoto2': ['*.cdef']
-    },
+    include_package_data=True,
+    distclass=BinaryDistribution,
     install_requires=[
         'cffi >= 0.8',
         'enum34 >= 1.0.3'
