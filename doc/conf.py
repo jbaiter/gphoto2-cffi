@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import os, sys
+import sys
 
 sys.path.insert(0, '../')
 
@@ -17,7 +17,7 @@ class Mock(object):
         if name in ('__file__', '__path__'):
             return '/dev/null'
         # Special case for CFFI
-        elif name == 'FFI':
+        elif name in ('FFI', 'Verifier'):
             return Mock()
         elif name[0] == name[0].upper():
             mockType = type(name, (), {})
@@ -26,7 +26,7 @@ class Mock(object):
         else:
             return Mock()
 
-MOCK_MODULES = ['cffi']
+MOCK_MODULES = ['cffi', 'cffi.verifier']
 for mod_name in MOCK_MODULES:
     sys.modules[mod_name] = Mock()
 

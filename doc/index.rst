@@ -75,5 +75,6 @@ API Reference
 
 .. automodule:: gphoto2.gphoto2
     :members:
+    :imported-members:
     :undoc-members:
     :member-order: groupwise
