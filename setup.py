@@ -35,16 +35,17 @@ if os.path.exists('README.rst'):
         description_long = open('README.rst').read()
 else:
     description_long = """
-Python bindings for libgphoto2 with an idiomatic interface and PyPy support,
-using cffi. In contrast to other bindings for Python, gphoto2-cffi hides most
-of the lower-level abstractions and allows you to work with an elegent API that
+Python bindings for libgphoto2 with an interface that strives to be idiomatic.
+In contrast to other bindings for Python, gphoto2-cffi hides most of the
+lower-level abstractions and allows you to work with an elegent API that
 exposes most of the library's features in an idiomatic interface.
 """
 
 setup(
     name='gphoto2-cffi',
     version="0.1",
-    description=("Bindings for libgphoto2 with an idiomatic API"),
+    description=("libgphoto2 bindings with an interface that strives to be "
+                 "idiomatic"),
     description_long=description_long,
     author="Johannes Baiter",
     url="http://github.com/jbaiter/gphoto2-cffi.git",
