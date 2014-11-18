@@ -474,7 +474,8 @@ class Camera(object):
         self.__abilities = _abilities
         self.__cam = None
         if not lazy:
-            self._cam()
+            # Trigger the property
+            self._cam
 
     @property
     def supported_operations(self):
