@@ -716,12 +716,8 @@ class Camera(object):
         event_type_p = ffi.new("CameraEventType*")
         event_data_p = ffi.new("void**", ffi.NULL)
         while True:
-            try:
-                lib.gp_camera_wait_for_event(self._cam, 1000, event_type_p,
-                                             event_data_p, self._ctx)
-            except errors.GPhoto2Error as e:
-                self._logger.error(e)
-                continue
+            lib.gp_camera_wait_for_event(self._cam, 1000, event_type_p,
+                                         event_data_p, self._ctx)
             if event_type_p[0] == lib.GP_EVENT_CAPTURE_COMPLETE:
                 self._logger.info("Capture completed.")
             elif event_type_p[0] == lib.GP_EVENT_FILE_ADDED:
