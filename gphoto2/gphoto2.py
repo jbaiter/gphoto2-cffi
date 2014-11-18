@@ -1,6 +1,5 @@
 from __future__ import unicode_literals, division, absolute_import
 
-import functools
 import itertools
 import logging
 import math
@@ -110,16 +109,6 @@ class VideoCaptureContext(object):
             self.stop()
 
 
-def _check_for_op(obj, op):
-    """ Checks `obj.supported_operations` for the specified
-        operation and throws a RuntimeException if it is unsupported.
-    """
-    # TODO: Is this really needed? Check if the library responds with sensible
-    # error messages on unsupported operations?
-    if obj._op_check and op not in obj.supported_operations:
-        raise RuntimeError("Device does not support this operation.")
-
-
 class Directory(object):
     """ A directory on the camera. """
     def __init__(self, name, parent, camera):
@@ -127,9 +116,7 @@ class Directory(object):
         self.parent = parent
         self._file_ops = camera._abilities.file_operations
         self._dir_ops = camera._abilities.folder_operations
-        self._op_check = camera._op_check
         self._cam = camera
-        self._check_for_op = functools.partial(_check_for_op, self)
 
     @property
     def path(self):
@@ -178,14 +165,11 @@ class Directory(object):
 
     def create(self):
         """ Create the directory. """
-        self._check_for_op(gp_globals.DIR_OPS.create)
         lib.gp_camera_folder_make_dir(self._cam._cam, self.parent.path,
                                       self.name, self._cam._ctx)
 
     def remove(self):
         """ Remove the directory. """
-
-        self._check_for_op(gp_globals.DIR_OPS.remove)
         lib.gp_camera_folder_remove_dir(self._cam._cam, self.parent.path,
                                         self.name, self._cam._ctx)
 
@@ -195,7 +179,6 @@ class Directory(object):
         :param local_path: Path to file to copy
         :type local_path:  str/unicode
         """
-        self._check_for_op(gp_globals.DIR_OPS.upload)
         camerafile_p = ffi.new("CameraFile**")
         with open(local_path, 'rb') as fp:
             lib.gp_file_new_from_fd(camerafile_p, fp.fileno())
@@ -221,9 +204,7 @@ class File(object):
         self.directory = directory
         self._cam = camera
         self._operations = camera._abilities.file_operations
-        self._op_check = camera._op_check
         self.__info = None
-        self._check_for_op = functools.partial(_check_for_op, self)
 
     @property
     def supported_operations(self):
@@ -284,8 +265,6 @@ class File(object):
         :param ftype:       Select 'view' on file.
         :type ftype:        str
         """
-        if self._op_check:
-            self._check_type_supported(ftype)
         camfile_p = ffi.new("CameraFile**")
         with open(target_path, 'wb') as fp:
             lib.gp_file_new_from_fd(camfile_p, fp.fileno())
@@ -301,8 +280,6 @@ class File(object):
         :return:            File content
         :rtype:             bytes
         """
-        if self._op_check:
-            self._check_type_supported(ftype)
         camfile_p = ffi.new("CameraFile**")
         lib.gp_file_new(camfile_p)
         lib.gp_camera_file_get(self._cam._cam, bytes(self.directory.path),
@@ -336,23 +313,8 @@ class File(object):
 
     def remove(self):
         """ Remove file from device. """
-        self._check_for_op(gp_globals.FILE_OPS.remove)
         lib.gp_camera_file_delete(self._cam._cam, bytes(self.directory.path),
                                   self.name, self._cam._ctx)
-
-    def _check_type_supported(self, ftype):
-        if ftype not in gp_globals.FILE_TYPES:
-            raise ValueError("`ftype` must be one of {0}"
-                             .format(gp_globals.FILE_TYPES.keys()))
-        valid_ops = self.supported_operations
-        fops = gp_globals.FILE_OPS
-        op_is_unsupported = (
-            (ftype == 'exif' and fops.extract_exif not in valid_ops) or
-            (ftype == 'preview' and fops.extract_preview not in valid_ops) or
-            (ftype == 'raw' and fops.extract_raw not in valid_ops) or
-            (ftype == 'audio' and fops.extract_audio not in valid_ops))
-        if op_is_unsupported:
-            raise RuntimeError("Operation is not supported for this type.")
 
     @property
     def _info(self):
@@ -500,25 +462,19 @@ class Camera(object):
     :param bus:         USB bus number
     :param device:      USB device number
     :param lazy:        Only initialize the device when needed
-    :param op_check:    Check for support before doing any operation
-                        (Some devices can do more than they admit to, hence
-                        the option to disable it)
     """
-    def __init__(self, bus=None, device=None, lazy=False, op_check=True,
-                 _abilities=None):
+    def __init__(self, bus=None, device=None, lazy=False, _abilities=None):
         self._logger = logging.getLogger()
 
         # NOTE: It is not strictly neccessary to create a context for every
         #       device, however it is significantly (>500ms) faster when
         #       actions are to be performed simultaneously.
         self._ctx = lib.gp_context_new()
-        self._op_check = op_check
         self._usb_address = (bus, device)
         self.__abilities = _abilities
         self.__cam = None
         if not lazy:
             self._cam()
-        self._check_for_op = functools.partial(_check_for_op, self)
 
     @property
     def supported_operations(self):
@@ -546,7 +502,6 @@ class Camera(object):
 
         :rtype:     dict
         """
-        self._check_for_op(gp_globals.CAM_OPS.update_config)
         config = self._get_config()
         return {section: {itm.name: itm for itm in config[section].values()
                           if not itm.readonly}
@@ -663,7 +618,6 @@ class Camera(object):
                     otherwise the captured image as a bytestring.
         :rtype:     :py:class:`File` or bytes
         """
-        self._check_for_op(gp_globals.CAM_OPS.capture_image)
         target = self.config['settings']['capturetarget']
         if to_camera_storage and target.value != "Memory card":
             target.set("Memory card")
@@ -715,7 +669,6 @@ class Camera(object):
         :return:    The preview image as a bytestring
         :rtype:     bytes
         """
-        self._check_for_op(gp_globals.CAM_OPS.capture_preview)
         camfile_p = ffi.new("CameraFile**")
         lib.gp_file_new(camfile_p)
         lib.gp_camera_capture_preview(self._cam, camfile_p[0], self._ctx)
