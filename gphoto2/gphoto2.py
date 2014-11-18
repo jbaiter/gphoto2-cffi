@@ -402,8 +402,8 @@ class ConfigItem(object):
         val_p = None
         if self.type == 'selection':
             if value not in self.choices:
-                raise ValueError("Invalid choice (valid: {0}",
-                                 repr(self.choices))
+                raise ValueError("Invalid choice (valid: {0})".format(
+                                 repr(self.choices)))
             val_p = ffi.new("const char[]", bytes(value))
         elif self.type == 'text':
             if not isinstance(value, basestring):
