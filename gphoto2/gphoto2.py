@@ -445,7 +445,7 @@ class ConfigItem(object):
         rmax = ffi.new("float*")
         rinc = ffi.new("float*")
         lib.gp_widget_get_range(self._widget, rmin, rmax, rinc)
-        return Range(rmin, rmax, rinc)
+        return Range(rmin[0], rmax[0], rinc[0])
 
     def __repr__(self):
         return ("ConfigItem('{0}', {1}, {2}, r{3})"
