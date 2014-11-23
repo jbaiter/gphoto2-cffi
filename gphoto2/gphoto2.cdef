@@ -1,3 +1,4 @@
+// vim: ft=c
 /* ======= Needed by all ======= */
 typedef ... Camera;
 typedef ... CameraFile;
