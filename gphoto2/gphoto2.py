@@ -49,6 +49,28 @@ def list_cameras():
     return out
 
 
+def supported_cameras():
+    """ List the names of all cameras supported by libgphoto2, grouped by the
+    name of their driver.
+    """
+    ctx = lib.gp_context_new()
+    abilities_list_p = new_gp_object("CameraAbilitiesList")
+    lib.gp_abilities_list_load(abilities_list_p, ctx)
+    abilities = ffi.new("CameraAbilities*")
+    out = []
+    for idx in range(lib.gp_abilities_list_count(abilities_list_p)):
+        lib.gp_abilities_list_get_abilities(abilities_list_p, idx, abilities)
+        if abilities.device_type == lib.GP_DEVICE_STILL_CAMERA:
+            libname = os.path.basename(ffi.string(abilities.library)
+                                       .decode())
+            out.append((ffi.string(abilities.model).decode(), libname))
+    lib.gp_abilities_list_free(abilities_list_p)
+    key_func = lambda name, driver: driver
+    out = sorted(out, key=key_func)
+    return {k: tuple(x[0] for x in v)
+            for k, v in itertools.groupby(out, key_func)}
+    return out
+
 class Range(namedtuple("Range", ('min', 'max', 'step'))):
     """ Specifies a range of values (:py:attr:`max`, :py:attr:`min`,
         :py:attr:`step`)
