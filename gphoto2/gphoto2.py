@@ -6,6 +6,7 @@ import math
 import os
 import re
 import string
+import sys
 import time
 from collections import namedtuple
 from datetime import datetime
@@ -13,6 +14,9 @@ from datetime import datetime
 from . import errors
 from .backend import ffi, lib, globals as gp_globals
 from .util import SimpleNamespace, get_string, get_ctype, new_gp_object
+
+if sys.version_info > (3,):
+    basestring = str
 
 
 def list_cameras():
@@ -30,14 +34,14 @@ def list_cameras():
     lib.gp_abilities_list_detect(abilities_list_p, port_list_p,
                                  camlist_p, ctx)
     out = []
-    for idx in xrange(lib.gp_list_count(camlist_p)):
+    for idx in range(lib.gp_list_count(camlist_p)):
         name = get_string(lib.gp_list_get_name, camlist_p, idx)
         value = get_string(lib.gp_list_get_value, camlist_p, idx)
         bus_no, device_no = (int(x) for x in
                              re.match(r"usb:(\d+),(\d+)", value).groups())
         abilities = ffi.new("CameraAbilities*")
         ability_idx = lib.gp_abilities_list_lookup_model(
-            abilities_list_p, name)
+            abilities_list_p, name.encode())
         lib.gp_abilities_list_get_abilities(abilities_list_p, ability_idx,
                                             abilities)
         if abilities.device_type == lib.GP_DEVICE_STILL_CAMERA:
@@ -70,6 +74,7 @@ def supported_cameras():
     return {k: tuple(x[0] for x in v)
             for k, v in itertools.groupby(out, key_func)}
     return out
+
 
 class Range(namedtuple("Range", ('min', 'max', 'step'))):
     """ Specifies a range of values (:py:attr:`max`, :py:attr:`min`,
@@ -165,11 +170,11 @@ class Directory(object):
     def files(self):
         """ Get a generator that yields all files in the directory. """
         filelist_p = new_gp_object("CameraList")
-        lib.gp_camera_folder_list_files(self._cam._cam, bytes(self.path),
+        lib.gp_camera_folder_list_files(self._cam._cam, self.path.encode(),
                                         filelist_p, self._cam._ctx)
-        for idx in xrange(lib.gp_list_count(filelist_p)):
-            yield File(name=get_string(lib.gp_list_get_name, filelist_p, idx),
-                       directory=self, camera=self._cam)
+        for idx in range(lib.gp_list_count(filelist_p)):
+            fname = get_string(lib.gp_list_get_name, filelist_p, idx)
+            yield File(name=fname, directory=self, camera=self._cam)
         lib.gp_list_free(filelist_p)
 
     @property
@@ -177,23 +182,25 @@ class Directory(object):
         """ Get a generator that yields all subdirectories in the directory.
         """
         dirlist_p = new_gp_object("CameraList")
-        lib.gp_camera_folder_list_folders(self._cam._cam, bytes(self.path),
+        lib.gp_camera_folder_list_folders(self._cam._cam, self.path.encode(),
                                           dirlist_p, self._cam._ctx)
-        for idx in xrange(lib.gp_list_count(dirlist_p)):
-            name = os.path.join(self.path, get_string(
-                lib.gp_list_get_name, dirlist_p, idx))
+        for idx in range(lib.gp_list_count(dirlist_p)):
+            name = os.path.join(
+                self.path, get_string(lib.gp_list_get_name, dirlist_p, idx))
             yield Directory(name=name, parent=self, camera=self._cam)
         lib.gp_list_free(dirlist_p)
 
     def create(self):
         """ Create the directory. """
-        lib.gp_camera_folder_make_dir(self._cam._cam, self.parent.path,
-                                      self.name, self._cam._ctx)
+        lib.gp_camera_folder_make_dir(
+            self._cam._cam, self.parent.path.encode(), self.name.encode(),
+            self._cam._ctx)
 
     def remove(self):
         """ Remove the directory. """
-        lib.gp_camera_folder_remove_dir(self._cam._cam, self.parent.path,
-                                        self.name, self._cam._ctx)
+        lib.gp_camera_folder_remove_dir(
+            self._cam._cam, self.parent.path.encode(), self.name.encode(),
+            self._cam._ctx)
 
     def upload(self, local_path):
         """ Upload a file to the camera's permanent storage.
@@ -205,8 +212,8 @@ class Directory(object):
         with open(local_path, 'rb') as fp:
             lib.gp_file_new_from_fd(camerafile_p, fp.fileno())
             lib.gp_camera_folder_put_file(
-                self._cam._cam, bytes(self.path) + b"/",
-                bytes(os.path.basename(local_path)),
+                self._cam._cam, self.path.encode() + b"/",
+                os.path.basename(local_path).encode(),
                 gp_globals.FILE_TYPES['normal'], camerafile_p[0],
                 self._cam.ctx)
 
@@ -247,7 +254,7 @@ class File(object):
 
         :rtype: str
         """
-        return ffi.string(self._info.file.type)
+        return ffi.string(self._info.file.type).decode()
 
     @property
     def dimensions(self):
@@ -290,9 +297,10 @@ class File(object):
         camfile_p = ffi.new("CameraFile**")
         with open(target_path, 'wb') as fp:
             lib.gp_file_new_from_fd(camfile_p, fp.fileno())
-            lib.gp_camera_file_get(self._cam._cam, bytes(self.directory.path),
-                                   self.name, gp_globals.FILE_TYPES[ftype],
-                                   camfile_p[0], self._cam._ctx)
+            lib.gp_camera_file_get(
+                self._cam._cam, self.directory.path.encode(),
+                self.name.encode(), gp_globals.FILE_TYPES[ftype], camfile_p[0],
+                self._cam._ctx)
 
     def get_data(self, ftype='normal'):
         """ Get file content as a bytestring.
@@ -304,9 +312,9 @@ class File(object):
         """
         camfile_p = ffi.new("CameraFile**")
         lib.gp_file_new(camfile_p)
-        lib.gp_camera_file_get(self._cam._cam, bytes(self.directory.path),
-                               self.name, gp_globals.FILE_TYPES[ftype],
-                               camfile_p[0], self._cam._ctx)
+        lib.gp_camera_file_get(
+            self._cam._cam, self.directory.path.encode(), self.name.encode(),
+            gp_globals.FILE_TYPES[ftype], camfile_p[0], self._cam._ctx)
         data_p = ffi.new("char**")
         length_p = ffi.new("unsigned long*")
         lib.gp_file_get_data_and_size(camfile_p[0], data_p, length_p)
@@ -325,18 +333,18 @@ class File(object):
         buf_p = ffi.new("char[{0}]".format(chunk_size))
         size_p = ffi.new("uint64_t*")
         offset_p = ffi.new("uint64_t*")
-        for chunk_idx in xrange(int(math.ceil(self.size/chunk_size))):
+        for chunk_idx in range(int(math.ceil(self.size/chunk_size))):
             size_p[0] = chunk_size
             lib.gp_camera_file_read(
-                self._cam._cam, bytes(self.directory.path), self.name,
-                gp_globals.FILE_TYPES[ftype], offset_p[0],
+                self._cam._cam, self.directory.path.encode(),
+                self.name.encode(), gp_globals.FILE_TYPES[ftype], offset_p[0],
                 buf_p, size_p, self._cam._ctx)
             yield ffi.buffer(buf_p, size_p[0])[:]
 
     def remove(self):
         """ Remove file from device. """
-        lib.gp_camera_file_delete(self._cam._cam, bytes(self.directory.path),
-                                  self.name, self._cam._ctx)
+        lib.gp_camera_file_delete(self._cam._cam, self.directory.path.encode(),
+                                  self.name.encode(), self._cam._ctx)
 
     @property
     def _info(self):
@@ -344,8 +352,8 @@ class File(object):
             self.__info = ffi.new("CameraFileInfo*")
             try:
                 lib.gp_camera_file_get_info(
-                    self._cam._cam, bytes(self.directory.path), self.name,
-                    self.__info, self._cam._ctx)
+                    self._cam._cam, self.directory.path.encode(),
+                    self.name.encode(), self.__info, self._cam._ctx)
             except errors.GPhoto2Error:
                 raise ValueError("Could not get file info, are you sure the "
                                  "file exists on the device?")
@@ -426,12 +434,12 @@ class ConfigItem(object):
             if value not in self.choices:
                 raise ValueError("Invalid choice (valid: {0})".format(
                                  repr(self.choices)))
-            val_p = ffi.new("const char[]", bytes(value))
+            val_p = ffi.new("const char[]", value.encode())
         elif self.type == 'text':
             if not isinstance(value, basestring):
                 raise ValueError("Value must be a string.")
             val_p = ffi.new("char**")
-            val_p[0] = ffi.new("char[]", bytes(value))
+            val_p[0] = ffi.new("char[]", value.encode())
         elif self.type == 'range':
             if value < self.range.min or value > self.range.max:
                 raise ValueError("Value exceeds valid range ({0}-{1}."
@@ -457,9 +465,9 @@ class ConfigItem(object):
             raise ValueError("Can only read choices for items of type "
                              "'selection'.")
         choices = []
-        for idx in xrange(lib.gp_widget_count_choices(self._widget)):
-            choices.append(
-                get_string(lib.gp_widget_get_choice, self._widget, idx))
+        for idx in range(lib.gp_widget_count_choices(self._widget)):
+            choices.append(get_string(lib.gp_widget_get_choice, self._widget,
+                                      idx))
         return choices
 
     def _read_range(self):
@@ -517,7 +525,7 @@ class Camera(object):
     @property
     def model_name(self):
         """ Camera model name as specified in the gphoto2 driver. """
-        return ffi.string(self._abilities.model)
+        return ffi.string(self._abilities.model).decode()
 
     @property
     def config(self):
@@ -540,11 +548,12 @@ class Camera(object):
         config = self._get_config()
         is_hex = lambda name: (len(name) == 4 and
                                all(c in string.hexdigits for c in name))
-        return SimpleNamespace(**dict(itertools.chain(
-            *(((i.name, i.value)
-               for i in config[sect].values()
-               if i.readonly and not is_hex(i.name))
-              for sect in config))))
+        out = SimpleNamespace()
+        for sect in config:
+            for itm in config[sect].values():
+                if (itm.readonly or sect == 'status') and not is_hex(itm.name):
+                    setattr(out, itm.name, itm.value)
+        return out
 
     @property
     def filesystem(self):
@@ -558,18 +567,19 @@ class Camera(object):
         num_info_p = ffi.new("int*")
         lib.gp_camera_get_storageinfo(self._cam, info_p, num_info_p, self._ctx)
         infos = []
-        for idx in xrange(num_info_p[0]):
+        for idx in range(num_info_p[0]):
             out = SimpleNamespace()
             struc = (info_p[0] + idx)
             fields = struc.fields
             if lib.GP_STORAGEINFO_BASE & fields:
                 out.directory = next(
                     (d for d in self.list_all_directories()
-                     if d.path == ffi.string(struc.basedir)), None)
+                     if d.path == ffi.string(struc.basedir).decode()),
+                    None)
             if lib.GP_STORAGEINFO_LABEL & fields:
-                out.label = ffi.string(struc.label)
+                out.label = ffi.string(struc.label).decode()
             if lib.GP_STORAGEINFO_DESCRIPTION & fields:
-                out.description = ffi.string(struc.description)
+                out.description = ffi.string(struc.description).decode()
             if lib.GP_STORAGEINFO_STORAGETYPE & fields:
                 stype = struc.type
                 if lib.GP_STORAGEINFO_ST_FIXED_ROM & stype:
@@ -705,7 +715,8 @@ class Camera(object):
         if self.__cam is None:
             self.__cam = new_gp_object("Camera")
             if self._usb_address != (None, None):
-                port_name = b"usb:{0:03},{1:03}".format(*self._usb_address)
+                port_name = ("usb:{0:03},{1:03}".format(*self._usb_address)
+                                                .encode())
                 port_list_p = new_gp_object("GPPortInfoList")
                 lib.gp_port_info_list_load(port_list_p)
                 port_info_p = ffi.new("GPPortInfo*")
@@ -755,15 +766,16 @@ class Camera(object):
                 break
         if event_type == lib.GP_EVENT_FILE_ADDED:
             camfile_p = ffi.cast("CameraFilePath*", event_data_p[0])
+            dirname = ffi.string(camfile_p[0].folder).decode()
             directory = next(f for f in self.list_all_directories()
-                             if f.path == ffi.string(camfile_p[0].folder))
-            return File(name=ffi.string(camfile_p[0].name),
+                             if f.path == dirname)
+            return File(name=ffi.string(camfile_p[0].name).decode(),
                         directory=directory, camera=self)
 
     def _get_config(self):
         def _widget_to_dict(cwidget):
             out = {}
-            for idx in xrange(lib.gp_widget_count_children(cwidget)):
+            for idx in range(lib.gp_widget_count_children(cwidget)):
                 child_p = ffi.new("CameraWidget**")
                 lib.gp_widget_get_child(cwidget, idx, child_p)
                 key = get_string(lib.gp_widget_get_name, child_p[0])
@@ -785,4 +797,5 @@ class Camera(object):
 
     def __del__(self):
         if self.__cam is not None:
-            lib.gp_camera_free(self._cam)
+            lib.gp_camera_exit(self.__cam, self._ctx)
+            lib.gp_camera_free(self.__cam)

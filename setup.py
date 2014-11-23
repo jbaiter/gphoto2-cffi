@@ -27,6 +27,11 @@ class CFFIInstall(install):
         self.distribution.ext_modules = get_ext_modules()
         install.finalize_options(self)
 
+REQUIRES = ['cffi >= 0.8']
+
+if sys.version_info < (3, 4):
+    REQUIRES.append('enum34 >= 1.0.3')
+
 
 if os.path.exists('README.rst'):
     if sys.version_info > (3,):
@@ -54,11 +59,8 @@ setup(
     packages=['gphoto2'],
     include_package_data=True,
     distclass=BinaryDistribution,
-    install_requires=[
-        'cffi >= 0.8',
-        'enum34 >= 1.0.3'
-    ],
-    setup_requires=['cffi >= 0.8'],
+    setup_requires=['cffi'],
+    install_requires=REQUIRES,
     cmdclass={
         "build": CFFIBuild,
         "install": CFFIInstall,

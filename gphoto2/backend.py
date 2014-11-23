@@ -25,7 +25,7 @@ def _create_modulename(cdef_sources, source, sys_version):
         the CFFI version.
     """
     key = '\x00'.join([sys_version[:3], source, cdef_sources])
-    key = key.encode('utf-8')
+    key = key.encode()
     k1 = hex(binascii.crc32(key[0::2]) & 0xffffffff)
     k1 = k1.lstrip('0x').rstrip('L')
     k2 = hex(binascii.crc32(key[1::2]) & 0xffffffff)
@@ -164,8 +164,8 @@ class LibraryWrapper(object):
             :param message: logging message
             :param data:    Other data in the logging record (unused)
             """
-            domain = ffi.string(domain)
-            message = ffi.string(message)
+            domain = ffi.string(domain).decode()
+            message = ffi.string(message).decode()
             logger = LibraryWrapper._logger.getChild(domain)
 
             if level not in globals.LOG_LEVELS:

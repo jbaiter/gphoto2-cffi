@@ -31,7 +31,7 @@ def get_string(cfunc, *args):
     :rtype:         str
     """
     cstr = get_ctype("const char**", cfunc, *args)
-    return ffi.string(cstr) if cstr else None
+    return ffi.string(cstr).decode() if cstr else None
 
 
 def get_ctype(rtype, cfunc, *args):
