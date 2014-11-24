@@ -48,7 +48,7 @@ access to most of the library's features.
 
 setup(
     name='gphoto2-cffi',
-    version="0.1",
+    version="0.2",
     description=("libgphoto2 bindings with an interface that strives to be "
                  "idiomatic"),
     description_long=description_long,
