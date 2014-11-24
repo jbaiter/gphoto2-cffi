@@ -1,5 +1,6 @@
 from __future__ import unicode_literals, division, absolute_import
 
+import functools
 import itertools
 import logging
 import math
@@ -76,6 +77,22 @@ def supported_cameras():
     return out
 
 
+def exit_after(meth=None, cam_struc=None):
+    if meth is None:
+        return functools.partial(exit_after, cam_struc=cam_struc)
+
+    @functools.wraps(meth)
+    def wrapped(self, *args, **kwargs):
+        if not isinstance(self, Camera):
+            cam, ctx = self._cam._cam, self._cam._ctx
+        else:
+            cam, ctx = self._cam, self._ctx
+        rval = meth(self, *args, **kwargs)
+        lib.gp_camera_exit(cam, ctx)
+        return rval
+    return wrapped
+
+
 class Range(namedtuple("Range", ('min', 'max', 'step'))):
     """ Specifies a range of values (:py:attr:`max`, :py:attr:`min`,
         :py:attr:`step`)
@@ -134,6 +151,7 @@ class VideoCaptureContext(object):
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.videofile is None:
             self.stop()
+        lib.gp_camera_exit(self.camera._cam, self.camera._ctx)
 
 
 class Directory(object):
@@ -167,6 +185,7 @@ class Directory(object):
             return self in self.parent.directories
 
     @property
+    @exit_after
     def files(self):
         """ Get a generator that yields all files in the directory. """
         filelist_p = new_gp_object("CameraList")
@@ -178,6 +197,7 @@ class Directory(object):
         lib.gp_list_free(filelist_p)
 
     @property
+    @exit_after
     def directories(self):
         """ Get a generator that yields all subdirectories in the directory.
         """
@@ -190,18 +210,21 @@ class Directory(object):
             yield Directory(name=name, parent=self, camera=self._cam)
         lib.gp_list_free(dirlist_p)
 
+    @exit_after
     def create(self):
         """ Create the directory. """
         lib.gp_camera_folder_make_dir(
             self._cam._cam, self.parent.path.encode(), self.name.encode(),
             self._cam._ctx)
 
+    @exit_after
     def remove(self):
         """ Remove the directory. """
         lib.gp_camera_folder_remove_dir(
             self._cam._cam, self.parent.path.encode(), self.name.encode(),
             self._cam._ctx)
 
+    @exit_after
     def upload(self, local_path):
         """ Upload a file to the camera's permanent storage.
 
@@ -286,6 +309,7 @@ class File(object):
         """
         return datetime.fromtimestamp(self._info.file.mtime)
 
+    @exit_after
     def save(self, target_path, ftype='normal'):
         """ Save file content to a local file.
 
@@ -302,6 +326,7 @@ class File(object):
                 self.name.encode(), gp_globals.FILE_TYPES[ftype], camfile_p[0],
                 self._cam._ctx)
 
+    @exit_after
     def get_data(self, ftype='normal'):
         """ Get file content as a bytestring.
 
@@ -320,6 +345,7 @@ class File(object):
         lib.gp_file_get_data_and_size(camfile_p[0], data_p, length_p)
         return ffi.buffer(data_p[0], length_p[0])[:]
 
+    @exit_after
     def iter_data(self, chunk_size=2**16, ftype='normal'):
         """ Get an iterator that yields chunks of the file content.
 
@@ -341,6 +367,7 @@ class File(object):
                 buf_p, size_p, self._cam._ctx)
             yield ffi.buffer(buf_p, size_p[0])[:]
 
+    @exit_after
     def remove(self):
         """ Remove file from device. """
         lib.gp_camera_file_delete(self._cam._cam, self.directory.path.encode(),
@@ -354,6 +381,7 @@ class File(object):
                 lib.gp_camera_file_get_info(
                     self._cam._cam, self.directory.path.encode(),
                     self.name.encode(), self.__info, self._cam._ctx)
+                lib.gp_camera_exit(self._cam, self._ctx)
             except errors.GPhoto2Error:
                 raise ValueError("Could not get file info, are you sure the "
                                  "file exists on the device?")
@@ -416,6 +444,7 @@ class ConfigItem(object):
         self.readonly = bool(get_ctype(
             "int*", lib.gp_widget_get_readonly, widget))
 
+    @exit_after
     def set(self, value):
         """ Update value of the option.
 
@@ -561,6 +590,7 @@ class Camera(object):
         return Directory(name="/", parent=None, camera=self)
 
     @property
+    @exit_after
     def storage_info(self):
         """ Information about the camera's storage. """
         info_p = ffi.new("CameraStorageInformation**")
@@ -636,6 +666,7 @@ class Camera(object):
                 yield d
         return list_dirs_recursively(self.filesystem)
 
+    @exit_after
     def capture(self, to_camera_storage=False):
         """ Capture an image.
 
@@ -664,7 +695,12 @@ class Camera(object):
             return fobj
         else:
             data = fobj.get_data()
-            fobj.remove()
+            try:
+                fobj.remove()
+            except errors.CameraIOError:
+                # That probably means the file is already gone from RAM,
+                # so nothing to worry about.
+                pass
             return data
 
     def capture_video_context(self):
@@ -676,6 +712,7 @@ class Camera(object):
         """
         return VideoCaptureContext(self)
 
+    @exit_after
     def capture_video(self, length):
         """ Capture a video.
 
@@ -693,6 +730,7 @@ class Camera(object):
             time.sleep(length)
         return ctx.videofile
 
+    @exit_after
     def get_preview(self):
         """ Get a preview from the camera's viewport.
 
@@ -738,8 +776,8 @@ class Camera(object):
     @property
     def _abilities(self):
         if self.__abilities is None:
-            self._abilities = ffi.new("CameraAbilities*")
-            lib.gp_camera_get_abilities(self._cam, self._abilities)
+            self.__abilities = ffi.new("CameraAbilities*")
+            lib.gp_camera_get_abilities(self._cam, self.__abilities)
         return self.__abilities
 
     def _wait_for_event(self, event_type=None, duration=0):
@@ -772,6 +810,7 @@ class Camera(object):
             return File(name=ffi.string(camfile_p[0].name).decode(),
                         directory=directory, camera=self)
 
+    @exit_after
     def _get_config(self):
         def _widget_to_dict(cwidget):
             out = {}
