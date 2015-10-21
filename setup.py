@@ -7,8 +7,8 @@ from setuptools.dist import Distribution
 
 
 class BinaryDistribution(Distribution):
-        def is_pure(self):
-                    return False
+    def is_pure(self):
+        return False
 
 
 def get_ext_modules():
