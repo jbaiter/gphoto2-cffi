@@ -24,9 +24,10 @@ def get_library_version():
     """ Get the version number of the underlying gphoto2 library.
 
     :return: The version
-    :rtype:  str/unicode
+    :rtype:  tuple of (major, minor, patch) version numbers
     """
-    return ffi.string(lib.gp_library_version(True)[0]).decode()
+    version_str = ffi.string(lib.gp_library_version(True)[0]).decode()
+    return tuple(int(x) for x in version_str.split('.'))
 
 
 def list_cameras():
