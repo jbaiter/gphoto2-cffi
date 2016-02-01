@@ -14,6 +14,7 @@ with open(os.path.join(os.path.dirname(__file__), 'gphoto2.cdef')) as fp:
     CDEF = fp.read()
 
 SOURCE = """
+#include "gphoto2/gphoto2-version.h"
 #include "gphoto2/gphoto2-context.h"
 #include "gphoto2/gphoto2-camera.h"
 #include <time.h>
@@ -141,6 +142,7 @@ class LibraryWrapper(object):
         "gp_context_new",
         "gp_list_count",
         "gp_result_as_string",
+        "gp_library_version",
     )
     #: Root logger that all other libgphoto2 loggers are children of
     _logger = logging.getLogger("libgphoto2")

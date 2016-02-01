@@ -20,6 +20,15 @@ if sys.version_info > (3,):
     basestring = str
 
 
+def library_version():
+    """ Get the version number of the underlying gphoto2 library.
+
+    :return: The version
+    :rtype:  str/unicode
+    """
+    return ffi.string(lib.gp_library_version(True)[0]).decode()
+
+
 def list_cameras():
     """ List all attached USB cameras that are supported by libgphoto2.
 

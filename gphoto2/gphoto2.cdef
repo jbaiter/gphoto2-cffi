@@ -417,3 +417,6 @@ typedef void (*GPLogFunc)(GPLogLevel level, const char* domain,
                           const char* str, void *data);
 
 int gp_log_add_func (GPLogLevel level, GPLogFunc func, void *data);
+
+/* ====== Other ====== */
+const char ** gp_library_version(int verbose);
