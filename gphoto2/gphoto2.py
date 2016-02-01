@@ -20,7 +20,7 @@ if sys.version_info > (3,):
     basestring = str
 
 
-def library_version():
+def get_library_version():
     """ Get the version number of the underlying gphoto2 library.
 
     :return: The version
