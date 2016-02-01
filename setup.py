@@ -57,6 +57,7 @@ setup(
     author_email="johannes.baiter@gmail.com",
     license='LGPLv3',
     packages=['gphoto2'],
+    package_data={'gphoto2': ['gphoto2.cdef']},
     include_package_data=True,
     distclass=BinaryDistribution,
     setup_requires=['cffi'],
