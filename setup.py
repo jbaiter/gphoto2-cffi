@@ -1,33 +1,9 @@
 import os
 import sys
-from distutils.command.build import build
 from setuptools import setup
-from setuptools.command.install import install
-from setuptools.dist import Distribution
 
 
-class BinaryDistribution(Distribution):
-    def is_pure(self):
-        return False
-
-
-def get_ext_modules():
-    import gphoto2cffi.backend
-    return [gphoto2cffi.backend.ffi.verifier.get_extension()]
-
-
-class CFFIBuild(build):
-    def finalize_options(self):
-        self.distribution.ext_modules = get_ext_modules()
-        build.finalize_options(self)
-
-
-class CFFIInstall(install):
-    def finalize_options(self):
-        self.distribution.ext_modules = get_ext_modules()
-        install.finalize_options(self)
-
-REQUIRES = ['cffi >= 0.8']
+REQUIRES = ['cffi >= 1.4']
 
 if sys.version_info < (3, 4):
     REQUIRES.append('enum34 >= 1.0.3')
@@ -59,12 +35,8 @@ setup(
     packages=['gphoto2cffi'],
     package_data={'gphoto2cffi': ['gphoto2.cdef']},
     include_package_data=True,
-    distclass=BinaryDistribution,
-    setup_requires=['cffi'],
+    setup_requires=['cffi >= 1.4'],
+    cffi_modules=['gphoto2cffi/backend_build.py:ffi'],
     install_requires=REQUIRES,
-    cmdclass={
-        "build": CFFIBuild,
-        "install": CFFIInstall,
-    },
     zip_safe=False,
 )

@@ -12,8 +12,8 @@ import time
 from collections import namedtuple
 from datetime import datetime
 
-from . import errors
-from .backend import ffi, lib, globals as gp_globals
+from . import errors, backend
+from .backend import ffi, lib
 from .util import SimpleNamespace, get_string, get_ctype, new_gp_object
 
 if sys.version_info > (3,):
@@ -184,7 +184,7 @@ class Directory(object):
     @property
     def supported_operations(self):
         """ All directory operations supported by the camera. """
-        return tuple(op for op in gp_globals.DIR_OPS if self._dir_ops & op)
+        return tuple(op for op in backend.DIR_OPS if self._dir_ops & op)
 
     @property
     def exists(self):
@@ -247,7 +247,7 @@ class Directory(object):
             lib.gp_camera_folder_put_file(
                 self._cam._cam, self.path.encode() + b"/",
                 os.path.basename(local_path).encode(),
-                gp_globals.FILE_TYPES['normal'], camerafile_p[0],
+                backend.FILE_TYPES['normal'], camerafile_p[0],
                 self._cam.ctx)
 
     def __eq__(self, other):
@@ -271,7 +271,7 @@ class File(object):
     @property
     def supported_operations(self):
         """ All file operations supported by the camera. """
-        return tuple(op for op in gp_globals.FILE_OPS if self._operations & op)
+        return tuple(op for op in backend.FILE_OPS if self._operations & op)
 
     @property
     def size(self):
@@ -333,7 +333,7 @@ class File(object):
             lib.gp_file_new_from_fd(camfile_p, fp.fileno())
             lib.gp_camera_file_get(
                 self._cam._cam, self.directory.path.encode(),
-                self.name.encode(), gp_globals.FILE_TYPES[ftype], camfile_p[0],
+                self.name.encode(), backend.FILE_TYPES[ftype], camfile_p[0],
                 self._cam._ctx)
 
     @exit_after
@@ -349,7 +349,7 @@ class File(object):
         lib.gp_file_new(camfile_p)
         lib.gp_camera_file_get(
             self._cam._cam, self.directory.path.encode(), self.name.encode(),
-            gp_globals.FILE_TYPES[ftype], camfile_p[0], self._cam._ctx)
+            backend.FILE_TYPES[ftype], camfile_p[0], self._cam._ctx)
         data_p = ffi.new("char**")
         length_p = ffi.new("unsigned long*")
         lib.gp_file_get_data_and_size(camfile_p[0], data_p, length_p)
@@ -373,7 +373,7 @@ class File(object):
             size_p[0] = chunk_size
             lib.gp_camera_file_read(
                 self._cam._cam, self.directory.path.encode(),
-                self.name.encode(), gp_globals.FILE_TYPES[ftype], offset_p[0],
+                self.name.encode(), backend.FILE_TYPES[ftype], offset_p[0],
                 buf_p, size_p, self._cam._ctx)
             yield ffi.buffer(buf_p, size_p[0])[:]
 
@@ -421,7 +421,7 @@ class ConfigItem(object):
                             widget)
         #: Type of option, can be one of `selection`, `text`, `range`,
         #: `toggle` or `date`.
-        self.type = gp_globals.WIDGET_TYPES[typenum]
+        self.type = backend.WIDGET_TYPES[typenum]
         #: Human-readable label
         self.label = get_string(lib.gp_widget_get_label, widget)
         #: Information about the widget
@@ -549,7 +549,7 @@ class Camera(object):
     @property
     def supported_operations(self):
         """ All operations supported by the camera. """
-        return tuple(op for op in gp_globals.CAM_OPS
+        return tuple(op for op in backend.CAM_OPS
                      if self._abilities.operations & op)
 
     @property

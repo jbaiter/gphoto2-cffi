@@ -1,4 +1,4 @@
-from .backend import ffi, globals as gp_globals
+from . import backend
 
 
 class SimpleNamespace(object):
@@ -31,7 +31,7 @@ def get_string(cfunc, *args):
     :rtype:         str
     """
     cstr = get_ctype("const char**", cfunc, *args)
-    return ffi.string(cstr).decode() if cstr else None
+    return backend.ffi.string(cstr).decode() if cstr else None
 
 
 def get_ctype(rtype, cfunc, *args):
@@ -43,7 +43,7 @@ def get_ctype(rtype, cfunc, *args):
     :param args:    Arguments to call function with
     :return:        A pointer to the specified data type
     """
-    val_p = ffi.new(rtype)
+    val_p = backend.ffi.new(rtype)
     args = args + (val_p,)
     cfunc(*args)
     return val_p[0]
@@ -56,6 +56,6 @@ def new_gp_object(typename):
     :param typename:    Name of the type to create.
     :return:            A pointer to the specified data type.
     """
-    obj_p = ffi.new("{0}**".format(typename))
-    gp_globals.CONSTRUCTORS[typename](obj_p)
+    obj_p = backend.ffi.new("{0}**".format(typename))
+    backend.CONSTRUCTORS[typename](obj_p)
     return obj_p[0]
