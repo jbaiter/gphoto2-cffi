@@ -12,8 +12,8 @@ class BinaryDistribution(Distribution):
 
 
 def get_ext_modules():
-    import gphoto2.backend
-    return [gphoto2.backend.ffi.verifier.get_extension()]
+    import gphoto2cffi.backend
+    return [gphoto2cffi.backend.ffi.verifier.get_extension()]
 
 
 class CFFIBuild(build):
@@ -56,8 +56,8 @@ setup(
     url="http://github.com/jbaiter/gphoto2-cffi.git",
     author_email="johannes.baiter@gmail.com",
     license='LGPLv3',
-    packages=['gphoto2'],
-    package_data={'gphoto2': ['gphoto2.cdef']},
+    packages=['gphoto2cffi'],
+    package_data={'gphoto2cffi': ['gphoto2.cdef']},
     include_package_data=True,
     distclass=BinaryDistribution,
     setup_requires=['cffi'],
