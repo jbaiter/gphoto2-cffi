@@ -391,7 +391,7 @@ class File(object):
                 lib.gp_camera_file_get_info(
                     self._cam._cam, self.directory.path.encode(),
                     self.name.encode(), self.__info, self._cam._ctx)
-                lib.gp_camera_exit(self._cam, self._ctx)
+                lib.gp_camera_exit(self._cam._cam, self._cam._ctx)
             except errors.GPhoto2Error:
                 raise ValueError("Could not get file info, are you sure the "
                                  "file exists on the device?")
