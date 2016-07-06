@@ -27,7 +27,7 @@ setup(
     version="0.3a1",
     description=("libgphoto2 bindings with an interface that strives to be "
                  "idiomatic"),
-    description_long=description_long,
+    long_description=description_long,
     author="Johannes Baiter",
     url="http://github.com/jbaiter/gphoto2-cffi.git",
     author_email="johannes.baiter@gmail.com",
