@@ -48,7 +48,7 @@ LOG_LEVELS = {
     _lib.GP_LOG_DEBUG:   logging.DEBUG}
 
 
-FILE_OPS = IntEnum(b'FileOperations', {
+FILE_OPS = IntEnum('FileOperations', {
     'remove': _lib.GP_FILE_OPERATION_DELETE,
     'extract_preview': _lib.GP_FILE_OPERATION_PREVIEW,
     'extract_raw': _lib.GP_FILE_OPERATION_RAW,
@@ -56,7 +56,7 @@ FILE_OPS = IntEnum(b'FileOperations', {
     'extract_exif': _lib.GP_FILE_OPERATION_EXIF})
 
 
-CAM_OPS = IntEnum(b'CameraOperations', {
+CAM_OPS = IntEnum('CameraOperations', {
     'capture_image': _lib.GP_OPERATION_CAPTURE_IMAGE,
     'capture_video': _lib.GP_OPERATION_CAPTURE_VIDEO,
     'capture_audio': _lib.GP_OPERATION_CAPTURE_AUDIO,
@@ -65,7 +65,7 @@ CAM_OPS = IntEnum(b'CameraOperations', {
     'trigger_capture': _lib.GP_OPERATION_TRIGGER_CAPTURE})
 
 
-DIR_OPS = IntEnum(b'DirectoryOperations', {
+DIR_OPS = IntEnum('DirectoryOperations', {
     'remove': _lib.GP_FOLDER_OPERATION_REMOVE_DIR,
     'create': _lib.GP_FOLDER_OPERATION_MAKE_DIR,
     'delete_all': _lib.GP_FOLDER_OPERATION_DELETE_ALL,
