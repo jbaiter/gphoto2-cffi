@@ -353,7 +353,12 @@ class File(object):
         data_p = ffi.new("char**")
         length_p = ffi.new("unsigned long*")
         lib.gp_file_get_data_and_size(camfile_p[0], data_p, length_p)
-        return ffi.buffer(data_p[0], length_p[0])[:]
+        byt = bytes(ffi.buffer(data_p[0], length_p[0]))
+        # gphoto2 camera files MUST be freed.
+        lib.gp_file_free(camfile_p[0])
+        # just to be safe.
+        del data_p, length_p, camfile_p
+        return byt
 
     @exit_after
     def iter_data(self, chunk_size=2**16, ftype='normal'):
