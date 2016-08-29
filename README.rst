@@ -40,8 +40,7 @@ offering access to most of the library's features.
     # Set a configuration value
     my_cam.config['capturesettings']['imagequality'].set("JPEG Fine")
 
-Currently only Python 2.7 and 3.4 (CPython and PyPy) are supported, however
-support for 2.6 and 3.3 is planned for the future.
+Python 2.7 and 3.4 or newer (CPython and PyPy) are supported.
 
 .. _libgphoto2: http://www.gphoto.org/proj/libgphoto2/
 .. _PyPy: http://pypy.org/
