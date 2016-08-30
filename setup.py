@@ -28,6 +28,12 @@ setup(
     description=("libgphoto2 bindings with an interface that strives to be "
                  "idiomatic"),
     long_description=description_long,
+    classifiers=[
+        'Programming Language :: Python :: 2',
+        'Programming Language :: Python :: 2.7',
+        'Programming Language :: Python :: 3',
+        'Programming Language :: Python :: 3.4',
+        'Programming Language :: Python :: 3.5'],
     author="Johannes Baiter",
     url="http://github.com/jbaiter/gphoto2-cffi.git",
     author_email="johannes.baiter@gmail.com",
