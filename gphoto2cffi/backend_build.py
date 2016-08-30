@@ -13,7 +13,7 @@ SOURCE = """
 """
 
 ffi = FFI()
-ffi.set_source("_backend", SOURCE, libraries=['gphoto2'])
+ffi.set_source("gphoto2cffi._backend", SOURCE, libraries=['gphoto2'])
 ffi.cdef(CDEF)
 
 if __name__ == "__main__":

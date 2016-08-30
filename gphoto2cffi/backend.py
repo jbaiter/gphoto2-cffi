@@ -3,7 +3,7 @@ import logging
 from enum import IntEnum
 
 from . import errors
-from _backend import ffi, lib as _lib
+from ._backend import ffi, lib as _lib
 
 
 #: Root logger that all other libgphoto2 loggers are children of
