@@ -109,6 +109,13 @@ class LibraryWrapper(object):
         """
         self._lib = to_wrap
 
+        # Register logging callback with FFI
+        self.logging_cb = ffi.callback(
+            "void(GPLogLevel, const char*, const char*, void*)",
+            _logging_callback)
+        self._lib.gp_log_add_func(_lib.GP_LOG_DEBUG, self.logging_cb,
+                                  ffi.NULL)
+
     @staticmethod
     def _check_error(rval):
         """ Check a return value for a libgphoto2 error. """
@@ -124,11 +131,6 @@ class LibraryWrapper(object):
         else:
             return val
 
-
-# Register logging callback with FFI
-logging_cb = ffi.callback(
-    "void(GPLogLevel, const char*, const char*, void*)",
-    _logging_callback)
 
 
 #: The wrapped library
