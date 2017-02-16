@@ -852,4 +852,4 @@ class Camera(object):
     def __del__(self):
         if self.__cam is not None:
             lib.gp_camera_exit(self.__cam, self._ctx)
-            lib.gp_camera_free(self.__cam)
+            lib.gp_camera_unref(self.__cam)
