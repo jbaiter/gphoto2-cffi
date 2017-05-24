@@ -9,7 +9,7 @@ offering access to most of the library's features.
 
 .. code:: python
 
-    import gphoto2 as gp
+    import gphoto2cffi as gp
 
     # List all attached cameras that are supported
     cams = gp.list_cameras()
