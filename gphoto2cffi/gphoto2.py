@@ -503,6 +503,7 @@ class ConfigItem(object):
             val_p[0] = value
         lib.gp_widget_set_value(self._widget, val_p)
         lib.gp_camera_set_config(self._cam._cam, self._root, self._cam._ctx)
+        self.value = value
 
     def _read_choices(self):
         if self.type != 'selection':
