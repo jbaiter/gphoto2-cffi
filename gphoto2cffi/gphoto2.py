@@ -556,6 +556,11 @@ class Camera(object):
         self.__event_type_p = ffi.new('CameraEventType *')
         self.__event_data_p = ffi.new('void **', ffi.NULL)
 
+        # pre-Allocate some more dynamic memory to be used for preview capture
+        self.__camfile_p = ffi.new("CameraFile**")
+        self.__data_p = ffi.new("char**")
+        self.__length_p = ffi.new("unsigned long*")
+
     @property
     def supported_operations(self):
         """ All operations supported by the camera. """
@@ -750,23 +755,20 @@ class Camera(object):
             time.sleep(length)
         return ctx.videofile
 
-    @exit_after
     def get_preview(self):
         """ Get a preview from the camera's viewport.
 
         This will usually be a JPEG image with the dimensions depending on
-        the camera.
+        the camera.  You will need to call the exit() method manually after
+        you are done capturing a live preview.
 
         :return:    The preview image as a bytestring
         :rtype:     bytes
         """
-        camfile_p = ffi.new("CameraFile**")
-        lib.gp_file_new(camfile_p)
-        lib.gp_camera_capture_preview(self._cam, camfile_p[0], self._ctx)
-        data_p = ffi.new("char**")
-        length_p = ffi.new("unsigned long*")
-        lib.gp_file_get_data_and_size(camfile_p[0], data_p, length_p)
-        return ffi.buffer(data_p[0], length_p[0])[:]
+        lib.gp_file_new(self.__camfile_p)
+        lib.gp_camera_capture_preview(self._cam, self.__camfile_p[0], self._ctx)
+        lib.gp_file_get_data_and_size(self.__camfile_p[0], self.__data_p, self.__length_p)
+        return ffi.buffer(self.__data_p[0], self.__length_p[0])[:]
 
     @property
     def _cam(self):
@@ -848,6 +850,10 @@ class Camera(object):
         root_widget = ffi.new("CameraWidget**")
         lib.gp_camera_get_config(self._cam, root_widget, self._ctx)
         return _widget_to_dict(root_widget[0])
+
+    @exit_after
+    def exit(self):
+        pass
 
     def __repr__(self):
         return "<Camera \"{0}\" at usb:{1:03}:{2:03}>".format(
