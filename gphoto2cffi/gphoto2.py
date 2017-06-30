@@ -552,6 +552,10 @@ class Camera(object):
             # Trigger the property
             self._cam
 
+        # pre-Allocate dynamic memory for the events
+        self.__event_type_p = ffi.new('CameraEventType *')
+        self.__event_data_p = ffi.new('void **', ffi.NULL)
+
     @property
     def supported_operations(self):
         """ All operations supported by the camera. """
@@ -801,25 +805,24 @@ class Camera(object):
             raise ValueError("Please specifiy either `event_type` or "
                              "`duration!`")
         start_time = time.time()
-        event_type_p = ffi.new("CameraEventType*")
-        event_data_p = ffi.new("void**", ffi.NULL)
+        self.__event_data_p[0] = ffi.NULL
         while True:
-            lib.gp_camera_wait_for_event(self._cam, 1000, event_type_p,
-                                         event_data_p, self._ctx)
-            if event_type_p[0] == lib.GP_EVENT_CAPTURE_COMPLETE:
+            lib.gp_camera_wait_for_event(self._cam, 1000, self.__event_type_p,
+                                         self.__event_data_p, self._ctx)
+            if self.__event_type_p[0] == lib.GP_EVENT_CAPTURE_COMPLETE:
                 self._logger.info("Capture completed.")
-            elif event_type_p[0] == lib.GP_EVENT_FILE_ADDED:
+            elif self.__event_type_p[0] == lib.GP_EVENT_FILE_ADDED:
                 self._logger.info("File added.")
-            elif event_type_p[0] == lib.GP_EVENT_TIMEOUT:
+            elif self.__event_type_p[0] == lib.GP_EVENT_TIMEOUT:
                 self._logger.debug("Timeout while waiting for event.")
                 continue
-            do_break = (event_type_p[0] == event_type or
+            do_break = (self.__event_type_p[0] == event_type or
                         ((time.time() - start_time > duration)
                          if duration else False))
             if do_break:
                 break
         if event_type == lib.GP_EVENT_FILE_ADDED:
-            camfile_p = ffi.cast("CameraFilePath*", event_data_p[0])
+            camfile_p = ffi.cast("CameraFilePath*", self.__event_data_p[0])
             dirname = ffi.string(camfile_p[0].folder).decode()
             directory = next(f for f in self.list_all_directories()
                              if f.path == dirname)
