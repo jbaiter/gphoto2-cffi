@@ -48,8 +48,13 @@ def list_cameras():
     for idx in range(lib.gp_list_count(camlist_p)):
         name = get_string(lib.gp_list_get_name, camlist_p, idx)
         value = get_string(lib.gp_list_get_value, camlist_p, idx)
-        bus_no, device_no = (int(x) for x in
-                             re.match(r"usb:(\d+),(\d+)", value).groups())
+
+        # Skip iteration if no matches
+        matches = re.match(r"usb:(\d+),(\d+)", value)
+        if not matches:
+            continue
+
+        bus_no, device_no = (int(x) for x in matches.groups())
         abilities = ffi.new("CameraAbilities*")
         ability_idx = lib.gp_abilities_list_lookup_model(
             abilities_list_p, name.encode())
