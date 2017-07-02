@@ -558,6 +558,7 @@ class Camera(object):
 
         # pre-Allocate some more dynamic memory to be used for preview capture
         self.__camfile_p = ffi.new("CameraFile**")
+        lib.gp_file_new(self.__camfile_p)
         self.__data_p = ffi.new("char**")
         self.__length_p = ffi.new("unsigned long*")
 
@@ -765,7 +766,6 @@ class Camera(object):
         :return:    The preview image as a bytestring
         :rtype:     bytes
         """
-        lib.gp_file_new(self.__camfile_p)
         lib.gp_camera_capture_preview(self._cam, self.__camfile_p[0], self._ctx)
         lib.gp_file_get_data_and_size(self.__camfile_p[0], self.__data_p, self.__length_p)
         return ffi.buffer(self.__data_p[0], self.__length_p[0])[:]
